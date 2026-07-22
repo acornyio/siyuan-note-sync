@@ -3,9 +3,13 @@
     "noImplicitAny": true,
     "module": "commonjs",
     "target": "es6",
+    "lib": ["ES2019", "DOM"],
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
     "strictNullChecks": false
   },
   "include": [
-    "src/**/*.ts"
+    "src/**/*.ts",
+    "src/**/*.json"
   ]
 }
