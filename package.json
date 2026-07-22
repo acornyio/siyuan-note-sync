@@ -8,6 +8,7 @@
     "format:check": "dprint check",
     "lint": "eslint . --fix --cache",
     "lint:check": "eslint .",
+    "typecheck": "node scripts/typecheck.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "dev": "webpack --config webpack.config.js --mode development",
@@ -18,7 +19,7 @@
   "license": "MIT",
   "packageManager": "pnpm@11.4.0",
   "engines": {
-    "node": ">=24.0.0"
+    "node": ">=22.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.5",
