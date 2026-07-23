@@ -15,7 +15,7 @@ const DEFAULT_SETTINGS: AcornySettings = {
   notebookId: '',
   docFolderPath: '/Acorny',
   syncOnStartup: true,
-  pollIntervalMinutes: 0,
+  pollIntervalMinutes: 60,
 }
 const DEFAULT_STATE: PluginState = { lastCursor: null, connectionId: null }
 

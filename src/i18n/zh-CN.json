@@ -9,7 +9,7 @@
   "settingServerUrl": "服务地址",
   "settingExportToken": "导出令牌",
   "settingNotebook": "目标笔记本",
-  "settingFolder": "文档文件夹（hpath）",
+  "settingFolder": "文档文件夹（笔记本内路径）",
   "settingSyncOnStartup": "启动时同步",
   "settingPollInterval": "自动同步间隔（分钟，0=关闭）",
   "save": "保存"

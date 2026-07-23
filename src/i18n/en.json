@@ -9,7 +9,7 @@
   "settingServerUrl": "Server URL",
   "settingExportToken": "Export token",
   "settingNotebook": "Target notebook",
-  "settingFolder": "Document folder (hpath)",
+  "settingFolder": "Document folder (path within notebook)",
   "settingSyncOnStartup": "Sync on startup",
   "settingPollInterval": "Auto-sync interval (minutes, 0 = off)",
   "save": "Save"

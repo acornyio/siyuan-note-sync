@@ -185,7 +185,7 @@ Acorny 的 401/429 由 `data.status` 透传（kernel 层 `code:0`），交给 `a
 | `notebookId` | — | 从 `lsNotebooks` 下拉选目标笔记本。**语义 = 新建 source 文档的落点**；已同步 source 继续贴其现有文档，改此项不迁移旧文档（见 §5 目标笔记本语义） |
 | `docFolderPath` | `/Acorny` | 文档所在 hpath 文件夹（同上，仅影响新建 source） |
 | `syncOnStartup` | `true` | 插件加载时自动同步一次 |
-| `pollIntervalMinutes` | `0` | 定时轮询分钟数，0=禁用 |
+| `pollIntervalMinutes` | `60` | 定时轮询分钟数，0=禁用（默认每小时一次） |
 
 触发方式：手动（顶栏图标 + 命令面板，带 `Syncing…/新增 N 条` 反馈）、启动时、定时轮询。
 

@@ -34,7 +34,7 @@ Each Acorny source (article/book) maps to one SiYuan document; each highlight be
 | Target notebook | — | **Where NEW source documents are created.** Already-synced sources keep their existing document wherever it lives; changing this does not migrate old documents. |
 | Document folder | `/Acorny` | hpath folder for new source documents |
 | Sync on startup | `true` | Sync once when the plugin loads |
-| Auto-sync interval | `0` | Minutes between automatic syncs; `0` disables |
+| Auto-sync interval | `60` | Minutes between automatic syncs; `0` disables |
 
 ## v1 limitations
 
