@@ -2,8 +2,7 @@
 const ILLEGAL = /[/\\:*?"<>|]/g
 
 const MAX_LEN = 120
-// 多数文件系统按字节限长（255 bytes）。120 个中日文 ≈ 360 字节会溢出，
-// 用保守字节预算，给 "-<sourceId>" 后缀留余量。
+// 多数文件系统按字节限长（255 bytes）。120 个中日文 ≈ 360 字节会溢出，用保守字节预算。
 const MAX_BYTES = 180
 const encoder = new TextEncoder()
 
@@ -47,15 +46,14 @@ function sanitizeTitle(title: string | null): string {
 }
 
 /**
- * 构造文档 hpath：`/<folder>/<sanitizedTitle>-<sanitized(sourceId)>`。
- * source-id 后缀是硬要求——`createDocWithMd` 按 hpath 幂等，两个不同 source
- * 若同名会串进同一文档且 custom-acorny-source-id 被覆盖（见 spec §5）。
- * 用**完整** sourceId（Acorny source id 是 UUID，本就路径安全）而非 `slice(0,8)`
- * 或哈希：完整 id 真正唯一、无碰撞（哈希只是概率极低）。对 id 也做一次防御性
- * 非法字符清理，防将来 id 格式变化引入路径问题。
+ * 构造文档 hpath：`/<folder>/<sanitizedTitle>`（干净标题，无后缀）。
+ * 实测 `createDocWithMd` **非** hpath 幂等：同一 path 每次都新建文档、返回不同 id
+ * （见 docs/superpowers/notes/2026-07-23-kernel-contract-fixtures.md）。因此：
+ *  - 同一 source 的复用靠 SQL 查 `custom-acorny-source-id`，不依赖 path 唯一；
+ *  - 两个同名但不同 source 各自得到独立文档（思源允许同名），不会串数据。
+ * 故不再加 source-id 后缀，避免污染可见文档标题。
  */
-export function buildDocHPath(folderPath: string, title: string | null, sourceId: string): string {
+export function buildDocHPath(folderPath: string, title: string | null): string {
   const folder = `/${folderPath.replace(/^\/+/, '').replace(/\/+$/, '')}`
-  const idSuffix = sourceId.replace(ILLEGAL, '-')
-  return `${folder}/${sanitizeTitle(title)}-${idSuffix}`
+  return `${folder}/${sanitizeTitle(title)}`
 }

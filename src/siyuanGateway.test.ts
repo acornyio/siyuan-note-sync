@@ -33,7 +33,7 @@ describe('siyuanGateway.writeSource', () => {
     const gw = createSiyuanGateway(f.client, { notebookId: 'nb', docFolderPath: '/Acorny' })
     const index = empty()
     const res = await gw.writeSource(s1, [hl('h1')], index)
-    expect(f.created[0].path).toBe('/Acorny/Deep Work-s1')
+    expect(f.created[0].path).toBe('/Acorny/Deep Work')
     expect(f.attrs).toContainEqual({ blockId: res.docId, attrs: { 'custom-acorny-source-id': 's1' } })
     expect(index.sourceDocMap.s1).toBe(res.docId)
   })

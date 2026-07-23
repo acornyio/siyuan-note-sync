@@ -37,7 +37,7 @@ export function createSiyuanGateway(
 
   /** 建文档并把 custom-acorny-source-id 锚在根块；返回 docId。 */
   async function ensureSourceDoc(source: ExportFeedSource): Promise<string> {
-    const hpath = buildDocHPath(opts.docFolderPath, source.title, source.id)
+    const hpath = buildDocHPath(opts.docFolderPath, source.title)
     const docId = await client.createDocWithMd(opts.notebookId, hpath, '')
     await client.setBlockAttrs(docId, { 'custom-acorny-source-id': source.id })
     return docId

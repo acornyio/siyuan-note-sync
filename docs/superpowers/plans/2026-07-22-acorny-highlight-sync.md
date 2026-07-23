@@ -30,7 +30,7 @@
 - `tsconfig.json` 必须含 `"lib": ["ES2019","DOM"]`（Task 1 加）；否则 `Object.entries` 等触发 TS2550。
 - i18n 文件名用**连字符** `en.json` / `zh-CN.json`（沿用脚手架，勿建 `zh_CN.json`）。
 - 去重属性写入必须**原子**：高亮块与 `custom-acorny-id` 一次 `appendBlock`（内联 IAL），不得拆成 append + setBlockAttrs（§5 崩溃窗口）；仅当 Task 0 spike 证明 IAL 不可行才降级并记录代价。
-- 文档 path 必须带完整 sourceId 后缀：`/<docFolderPath>/<sanitizedTitle>-<sanitized(sourceId)>`（§4/§5 同名串数据；用完整 UUID，**非** `slice(0,8)` 或哈希）。
+- 文档 path 用**干净标题** `/<docFolderPath>/<sanitizedTitle>`（无后缀）。实测 `createDocWithMd` 非 hpath 幂等、思源允许同名文档，复用靠 SQL `custom-acorny-source-id`，不靠 path 唯一（原 sourceId 后缀假设已推翻，见 notes/§11）。
 - 设置默认：`serverUrl=https://api.acorny.io`、`docFolderPath=/Acorny`、`syncOnStartup=true`、`pollIntervalMinutes=60`。
 - 敏感：`exportToken` 用密码框展示，不写入日志。
 - 每个任务结束 commit；提交信息中文正文、术语保留英文。

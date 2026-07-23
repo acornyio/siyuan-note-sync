@@ -19,3 +19,7 @@
 
 5. **🔴 forwardProxy `headers` 是数组值**：`{"Content-Type":["text/html"],"Date":["..."]}`（`Record<string,string[]>`），非 string。`data.body` 为字符串、`bodyEncoding:"text"`（非 base64）。
    - **已修:** `httpProxy.ts` 的 `normalizeHeaders` 小写化键 + 取数组首值扁平为 `Record<string,string>`，保证 apiClient 读 `retry-after` 拿到字符串。
+
+6. **`createDocWithMd` 非 hpath 幂等（推翻旧假设）**：同一 hpath `/spike3/Same Title Doc` 连建两次得到**两个不同 docId**，`getIDsByHPath` 返回两条，两文档 content 同为标题。思源**允许同名文档**。
+   - **影响:** 当初为"防同名 source 串进一篇/覆盖 source-id 属性"加的 path 后缀（Codex #1/#4）**前提不成立、已移除**——`docPath` 用干净标题。同一 source 复用只靠 SQL 查 `custom-acorny-source-id`（我们从不对同一 source 二次 `createDocWithMd`）；两个同名不同 source 各自独立成文档，不串数据。
+   - **残留风险（升级记录）:** 结合结论 2 的 ~1.5s 异步索引——若在上次同步刚建完某 source 的文档后 <1.5s 内再次手动同步，第二次 `loadSyncedIndex` 可能漏看该 source 的 source-id → 又 `createDocWithMd` 建**重复文档**（比重复块更重）。`syncing` 单飞门挡并发、自动同步分钟级，仅"手动秒级连点"可触发。二期可加插件 session 内存缓存 source→doc 消除。

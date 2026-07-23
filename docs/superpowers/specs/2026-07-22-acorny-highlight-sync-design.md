@@ -121,7 +121,7 @@ SyncEngine.sync()
 
 `writeSource(source, highlights, index)`：
 1. `docId = sourceDocMap[source.id]`；无 → `ensureSourceDoc(source)`：
-   - **path 去重**：`createDocWithMd` 按 hpath 幂等，不同 source 若 sanitize 后同名会解析到同一文档并串数据（见 §5、§11）。故建于 `/<docFolderPath>/<sanitizedTitle>-<sanitized(source.id)>`，后缀用**完整** source.id（Acorny source id 是 UUID，本就路径安全，再防御性清一次非法字符），真正唯一、无碰撞。
+   - **建于干净 path** `/<docFolderPath>/<sanitizedTitle>`（无后缀）。`createDocWithMd` 实测**非** hpath 幂等，同名不同 source 各自独立成文档；复用靠 SQL source-id，不靠 path 唯一（见 §5）。
    - `setBlockAttrs(docId, {custom-acorny-source-id: source.id})`，写入 sourceDocMap。
    - 优化（可选）：新建文档时对该 source 的当页高亮，直接把带 IAL 的完整 markdown 交给 `createDocWithMd` 一次落地，避免「建空文档 + N 次 append」的 N+1 往返（一本大书数百高亮尤其明显）。落地后这些高亮 id 已随 IAL 写入，同样计入 syncedHlIds。
 2. 对每条高亮（未走上面批量优化的）：`syncedHlIds.has(id)` → **跳过**；否则 **一次** `appendBlock(docId, renderHighlightItem(h))`，`data` 内联 IAL `{: custom-acorny-id="<h.id>"}` 使块与去重属性**原子落地** → 加入 syncedHlIds，`added++`。不再单独调 `setBlockAttrs`（消除 append 与 setAttr 之间的崩溃窗口，见 §5）。
@@ -139,7 +139,7 @@ SyncEngine.sync()
   SELECT block_id, value FROM attributes WHERE name = 'custom-acorny-id';
   ```
 - **原子写去重属性**：高亮块与其 `custom-acorny-id` 必须**一次 API 调用**落地（`appendBlock` 的 markdown 内联 IAL）。若拆成 `appendBlock` + `setBlockAttrs` 两步，两步之间失败会留下**无属性的孤块**——下次同步的 SQL 快照看不到它 → 重复追加。IAL 内联关闭这个窗口。
-- **来源锚定 path 去重**：`createDocWithMd` 按 hpath 幂等，不同 source 同名会串进同一文档且 `custom-acorny-source-id` 被覆盖。故文档 path 带**完整** source-id 后缀 `-<sanitized(source.id)>`（**不是** `slice(0,8)`、也不是哈希——source id 是 UUID，截前 8 位理论可撞、哈希只是概率极低；用完整 id 真正唯一、无碰撞，UUID 本就路径安全，再防御性清一次非法字符）。保证不同 source 一定落到不同文档；复用仍以 SQL 查 `custom-acorny-source-id` 为准（与标题/位置解耦）。
+- **文档标题干净、复用靠 source-id**：实测 `createDocWithMd` **非** hpath 幂等（同 path 每次新建文档，思源允许同名，见 notes）。故文档用**干净标题** `/<folder>/<sanitizedTitle>`、**不加后缀**。同一 source 的复用只靠 SQL 查 `custom-acorny-source-id`（与标题/位置解耦）；两个同名但不同 source 各自独立成文档，不串数据。（旧设计的 source-id 后缀基于"同 path 幂等会覆盖属性"的**错误假设**，已移除，见 §11。）
 - **编辑保护**：已存在的高亮块**永不改动/追加**。用户对已同步块及文档的编辑完整保留。
 - **思源即真相 + 单实例串行幂等**：「已同步什么」由思源块属性决定，插件本地状态只存 `{lastCursor, connectionId}`。去重在**单实例串行**下成立（`SyncEngine` 有 `running` 单飞门）。**注意**：块属性无唯一约束，两个桌面窗口/两台设备**同时**同步理论上可能各写一份重复块——v1 明确只承诺单实例串行幂等，不承诺跨实例/跨设备并发天然一致（二期可加跨实例写入协调）。
 - **目标笔记本语义**：`loadSyncedIndex` 的 SQL **全库**查询（不按 `blocks.box` 收窄），这是「用户手动移动文档不影响匹配」的必要前提。由此，「目标笔记本」设置的含义是**新建 source 文档的落点**；已同步过的 source 会继续贴着它现有的那篇文档（无论现在在哪个笔记本），改设置不会把旧 source 迁到新笔记本。这是刻意取舍，需在设置说明里讲清楚。
@@ -213,7 +213,7 @@ Acorny 的 401/429 由 `data.status` 透传（kernel 层 `code:0`），交给 `a
 - **[必须先做] kernel 契约真机 spike（前置）**：整个去重模型押注「列表 markdown 末尾 IAL 落到高亮块」，此前提在实现 renderer/gateway **之前**就要用真实思源 kernel 验证，避免押错后返工。spike 需固化的 fixture：①`appendBlock` 内联 IAL 后，`custom-acorny-id` 落在哪个块（list / list-item）、有嵌套 note 时是否仍生效；②`appendBlock` 返回的新块 id 路径（`data[0].doOperations[0].id`）；③`createDocWithMd` 返回值形状（是否直接是 docId 字符串）；④`forwardProxy` 响应 `data.{status,body,headers}` 的真实形状（body 是否 base64、headers 键大小写）。对应实现计划 **Task 0**。
 - `forwardProxy` 对 Acorny 非 2xx 是否稳定透传 `data.status`，以及 `data.headers` 键大小写、`data.body` 编码（设计假设成立，实现时以真实响应固化最小回归测试）。
 - `appendBlock` 内联 IAL 是否被 kernel 正确解析为块自定义属性（`{: custom-acorny-id="..."}`）——这是原子去重的前提，实现时以真实响应验证并固化回归测试；若 kernel 不支持内联 IAL，退回 append+setBlockAttrs 并显式接受重复窗口（需在 §5/§7 记录降级）。
-- **不同 source sanitize 后同名** → hpath 冲突串数据：靠 path 带 source-id 短后缀避免（§4/§5）；需真机验证短后缀方案在中日文标题、超长标题下的落盘行为。
+- ~~不同 source 同名 hpath 冲突串数据~~ **已实测解除**：`createDocWithMd` 非 hpath 幂等、思源允许同名文档，同名不同 source 各自独立成文档（见 notes）。故用干净标题、无后缀。**新残留风险**：上次刚建某 source 文档后 <1.5s 内手动再同步，因 `attributes` 表异步索引，第二次 `loadSyncedIndex` 可能漏看 source-id → 建**重复文档**；`syncing` 门 + 分钟级自动同步已挡绝大多数，二期可加 session 内存缓存 source→doc 消除。
 - `createDocWithMd` 同 path 不覆盖的语义与我们「先 SQL 查 source-id 再决定建不建」是否有竞态（单机顺序执行，风险低）。
 - 移动端 `forwardProxy` / `fetchPost` 可用性需真机 QA。
 - bazaar 上架要求（`plugin.json` 字段、icon 160×160、preview 1024×768、README 双语）留发布阶段处理。
