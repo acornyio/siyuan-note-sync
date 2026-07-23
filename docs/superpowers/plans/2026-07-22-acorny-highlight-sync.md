@@ -8,6 +8,18 @@
 
 **Tech Stack:** TypeScript + 思源 `siyuan` SDK（`Plugin`/`Setting`/`fetchSyncPost`）、webpack + esbuild-loader 构建、vitest 单测、pnpm。设计规范见 `docs/superpowers/specs/2026-07-22-acorny-highlight-sync-design.md`。
 
+## 执行状态（2026-07-23）
+
+分支 `feat/acorny-highlight-sync`。**Task 0–13 代码全部实现完毕**，门禁全绿：`lint:check` 0、`typecheck` src 干净、**47 tests passed**、`build` 成功。
+
+- **Task 0 kernel 真机 spike ✅**（kernel 3.7.2，结论见 `docs/superpowers/notes/2026-07-23-kernel-contract-fixtures.md`）：
+  - 内联 IAL **生效**，`custom-acorny-id` 落在外层 `NodeList` 块，`appendBlock` 返回该块 id → **去重模型成立，renderer/gateway 未改**。
+  - `attributes` 表**异步索引 ~1.5s**（append 后立即查为空）；loadSyncedIndex 在同步开始时查 + 单次 drain 用内存 Set，无害。
+  - **修复真机 bug**：forwardProxy `headers` 为数组值 `Record<string,string[]>`，`httpProxy.normalizeHeaders` 取首值扁平化。
+  - fixture 已冻结并接入 Task 9/10 回归测试（Step 4b ✅）。
+- **执行期偏差**（详见文末 Self-Review §4 / 各任务内注）：加 `scripts/typecheck.mjs` 门禁绕过 siyuan SDK 自带类型 bug；纯逻辑 `siyuanClientCore.ts` 与 `import 'siyuan'` 分离以便 vitest；项目风格统一为 single-quote/no-semi；`docPath` 后缀用完整 sanitized sourceId。
+- **唯一待办**：Task 12 Step 5 桌面端端到端真机 QA（需 Acorny export token + 加载插件）。
+
 ## Global Constraints
 
 - 包管理器：`pnpm`（禁 npm/yarn）；`node >=24.0.0`；`siyuan` SDK `1.2.2`。
