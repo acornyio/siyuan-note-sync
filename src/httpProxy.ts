@@ -4,7 +4,9 @@ import type { HttpRequest, HttpResponse } from './apiClient'
 export interface ForwardProxyResponse {
   status: number
   body: string
-  headers: Record<string, string>
+  // 思源 forwardProxy 的 headers 是**数组值**（真机实测 `{"Content-Type":["text/html"]}`）；
+  // 防御性兼容 string，扁平化时取首个值。
+  headers: Record<string, string[] | string>
 }
 
 export type ForwardProxyFn = (req: {
@@ -14,10 +16,15 @@ export type ForwardProxyFn = (req: {
   timeout?: number
 }) => Promise<ForwardProxyResponse>
 
-/** header 键统一小写，供 apiClient 一致读取（如 retry-after）。 */
-function lowerKeys(headers: Record<string, string>): Record<string, string> {
+/**
+ * header 键统一小写 + 值扁平化，供 apiClient 一致读取（如 retry-after）。
+ * 思源 forwardProxy 返回数组值（`{"Retry-After":["42"]}`），取首个；兼容 string。
+ */
+function normalizeHeaders(headers: Record<string, string[] | string>): Record<string, string> {
   const out: Record<string, string> = {}
-  for (const [k, v] of Object.entries(headers)) out[k.toLowerCase()] = v
+  for (const [k, v] of Object.entries(headers)) {
+    out[k.toLowerCase()] = Array.isArray(v) ? (v[0] ?? '') : v
+  }
   return out
 }
 
@@ -36,6 +43,6 @@ export function createForwardProxyHttp(forwardProxy: ForwardProxyFn): HttpReques
     } catch {
       // body 非 JSON（如上游 429 返回纯文本）：保持 json = null
     }
-    return { status: resp.status, json, headers: lowerKeys(resp.headers ?? {}) }
+    return { status: resp.status, json, headers: normalizeHeaders(resp.headers ?? {}) }
   }
 }

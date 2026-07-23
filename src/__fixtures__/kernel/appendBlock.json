@@ -1,0 +1,20 @@
+{
+  "code": 0,
+  "msg": "",
+  "data": [
+    {
+      "timestamp": 0,
+      "doOperations": [
+        {
+          "action": "insert",
+          "data": "<div data-subtype=\"u\" data-node-id=\"20260723221941-y0cgfsy\" data-type=\"NodeList\" class=\"list\" custom-acorny-id=\"probe-1\"><div data-marker=\"*\" data-node-id=\"20260723221941-zhomasg\" data-type=\"NodeListItem\" class=\"li\"></div></div>",
+          "id": "20260723221941-y0cgfsy",
+          "parentID": "20260723221940-nsoyq1z",
+          "previousID": "20260723221940-gueg8pk",
+          "nextID": ""
+        }
+      ],
+      "undoOperations": null
+    }
+  ]
+}

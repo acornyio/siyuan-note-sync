@@ -1,0 +1,18 @@
+{
+  "code": 0,
+  "msg": "",
+  "data": {
+    "body": "<html>\r\n<head><title>503 Service Temporarily Unavailable</title></head>\r\n<body>\r\n<center><h1>503 Service Temporarily Unavailable</h1></center>\r\n</body>\r\n</html>\r\n",
+    "bodyEncoding": "text",
+    "contentType": "text/html",
+    "elapsed": 1246,
+    "headers": {
+      "Content-Length": ["162"],
+      "Content-Type": ["text/html"],
+      "Date": ["Thu, 23 Jul 2026 14:19:42 GMT"],
+      "Server": ["awselb/2.0"]
+    },
+    "status": 503,
+    "url": "https://httpbin.org/status/429"
+  }
+}
