@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { AuthError, fetchFeedPage, FeedRequestError, RateLimitError, type HttpResponse } from './apiClient'
+import { AuthError, fetchFeedPage, FeedRequestError, type HttpResponse } from './apiClient'
 
 const ok = (json: unknown): HttpResponse => ({ status: 200, json, headers: {} })
 

@@ -34,7 +34,7 @@ export function createForwardProxyHttp(forwardProxy: ForwardProxyFn): HttpReques
     try {
       json = resp.body ? JSON.parse(resp.body) : null
     } catch {
-      json = null
+      // body 非 JSON（如上游 429 返回纯文本）：保持 json = null
     }
     return { status: resp.status, json, headers: lowerKeys(resp.headers ?? {}) }
   }
