@@ -1,5 +1,5 @@
 import { Plugin, Setting, showMessage } from 'siyuan'
-import type { AcornySettings, PluginState, SyncStatus } from './types'
+import type { AcornySettings, PluginState } from './types'
 import { fetchFeedPage } from './apiClient'
 import { createForwardProxyHttp } from './httpProxy'
 import { createSiyuanClient, type Notebook } from './siyuanClient'
@@ -35,19 +35,21 @@ export default class AcornySyncPlugin extends Plugin {
   /** 插件级同步单飞门：在设置 activeGateway 之前就拦截并发触发，防止第二次运行覆盖目的地快照。 */
   private syncing = false
   private notebooks: Notebook[] = []
+  /** 顶栏图标元素，用于同步中旋转动效。 */
+  private topBarElement: HTMLElement | null = null
   /** 当前同步运行期的网关快照（notebook/folder 在 runSync 起点冻结）。 */
   private activeGateway: SiyuanGateway | null = null
 
   async onload(): Promise<void> {
     // 先「同步」注册 UI：siyuan 的 onload 是同步 void 生命周期，宿主不保证 await 完成；
     // 在首个 await 之后再 addTopBar/addCommand 会有卸载/布局竞态。this.i18n 已由框架加载。
-    this.addTopBar({
+    this.topBarElement = this.addTopBar({
       icon: 'iconRefresh',
       title: this.i18n.syncNow,
       position: 'right',
-      callback: () => void this.runSync(),
+      callback: () => void this.runSync(true),
     })
-    this.addCommand({ langKey: 'syncNow', hotkey: '', callback: () => void this.runSync() })
+    this.addCommand({ langKey: 'syncNow', hotkey: '', callback: () => void this.runSync(true) })
 
     await this.loadPersisted()
     // 卸载竞态：插件可能在 loadPersisted 期间已被禁用/卸载，别再继续建 engine/设置面板/启动同步。
@@ -62,7 +64,8 @@ export default class AcornySyncPlugin extends Plugin {
       loadSyncedIndex: () => this.requireGateway().loadSyncedIndex(),
       fetchPage: ({ serverUrl, token, cursor }) => fetchFeedPage(http, { serverUrl, token, cursor }),
       writeSource: (source, highlights, index) => this.requireGateway().writeSource(source, highlights, index),
-      onStatus: (status, detail) => this.setStatus(status, detail),
+      // 状态展示由 runSync 直接驱动顶栏旋转，这里无需处理。
+      onStatus: () => {},
       isAborted: () => this.disposed,
     })
     this.ready = true
@@ -97,7 +100,7 @@ export default class AcornySyncPlugin extends Plugin {
     }
   }
 
-  private async runSync(): Promise<void> {
+  private async runSync(manual = false): Promise<void> {
     if (this.disposed || !this.ready) return
     // 插件级单飞门：必须在设置 activeGateway 之前拦截并发触发（双击 / 启动同步与定时器重叠），
     // 否则第二次 runSync 会先把 activeGateway 改成新目的地，正在进行的第一次同步后续页面
@@ -106,6 +109,9 @@ export default class AcornySyncPlugin extends Plugin {
     if (!this.settings.exportToken) { showMessage(this.i18n.setTokenFirst); return }
     if (!this.settings.notebookId) { showMessage(this.i18n.selectNotebookFirst); return }
     this.syncing = true
+    this.setSyncingIndicator(true)
+    // 手动触发给即时反馈（自动同步静默，只靠顶栏旋转，避免定时 toast 打扰）。
+    if (manual) showMessage(this.i18n.syncing)
     // 在本次运行起点冻结目的地（notebook/folder），避免 drain 期间用户改设置写错地方。
     this.activeGateway = createSiyuanGateway(this.client, {
       notebookId: this.settings.notebookId,
@@ -115,23 +121,27 @@ export default class AcornySyncPlugin extends Plugin {
       const res = await this.engine.sync()
       if (this.disposed) return
       if (res.status === 'completed') {
-        showMessage(this.i18n.syncedCount.replace('${count}', String(res.added)))
+        // 自动同步无新增时不打扰；手动或有新增才提示。
+        if (manual || res.added > 0) showMessage(this.i18n.syncedCount.replace('${count}', String(res.added)))
       } else if (res.status === 'auth_failed') {
         showMessage(this.i18n.authFailed)
       } else if (res.status === 'backoff') {
-        showMessage(this.i18n.backoff.replace('${seconds}', String(res.retryAfterSeconds)))
+        if (manual) showMessage(this.i18n.backoff.replace('${seconds}', String(res.retryAfterSeconds)))
       }
       if (res.status !== 'skipped') {
         this.scheduleAuto(nextAutoDelayMs(res, this.settings.pollIntervalMinutes))
       }
     } finally {
       this.syncing = false
+      this.setSyncingIndicator(false)
       this.activeGateway = null
     }
   }
 
-  private setStatus(_status: SyncStatus, _detail?: string): void {
-    // 顶栏图标无常驻文本；状态通过 showMessage 反馈。保留钩子以便后续加状态条。
+  /** 同步中给顶栏图标加/去旋转动效（思源内置 `fn__rotate`）。 */
+  private setSyncingIndicator(on: boolean): void {
+    const svg = this.topBarElement?.querySelector('svg')
+    if (svg) svg.classList.toggle('fn__rotate', on)
   }
 
   private buildSettingPanel(): void {
