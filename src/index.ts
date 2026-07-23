@@ -175,9 +175,12 @@ export default class AcornySyncPlugin extends Plugin {
           const opt = document.createElement('option')
           opt.value = nb.id
           opt.textContent = nb.name
-          if (nb.id === draft.notebookId) opt.selected = true
           el.append(opt)
         }
+        // <select> 不改动就不触发 change，值不会写进 draft。构建后立即把「当前显示的值」
+        // 写回 draft：已选过则显示该项，否则默认第一个（所见即所存），避免"显示了却没提交"。
+        if (draft.notebookId) el.value = draft.notebookId
+        if (this.notebooks.length > 0) draft.notebookId = el.value
         el.addEventListener('change', () => { draft.notebookId = el.value })
         return el
       },
