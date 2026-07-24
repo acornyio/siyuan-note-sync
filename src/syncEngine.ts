@@ -25,7 +25,12 @@ export interface SyncEngineDeps {
   onStatus: (status: SyncStatus, detail?: string) => void
   /** 返回 true（插件被禁用/重载）时，drain 在下次 fetch/write 前停止且不持久化状态。 */
   isAborted?: () => boolean
+  /** 自愈确认前的等待（默认真实 setTimeout）；注入以便测试免于真实延时。 */
+  sleep?: (ms: number) => Promise<void>
 }
+
+/** attributes 表异步索引观测值约 1.5s，取 2s 留余量（见 Task 0 spike notes）。 */
+const SELF_HEAL_SETTLE_MS = 2000
 
 const MAX_PAGES = 10_000 // 防服务端 bug 无限翻页的安全阀
 
@@ -52,13 +57,20 @@ export class SyncEngine {
       let cursor = sameConnection ? state.lastCursor : null
 
       // 去重索引一律来自思源 SQL（不依赖本地缓存）：跨账号也安全，因为块属性即真相。
-      const index = await this.deps.loadSyncedIndex()
+      let index = await this.deps.loadSyncedIndex()
 
-      // 自愈：本地有游标（声称同步过）但思源里一条已同步高亮都没有（文档被删 / 库被清），
-      // 说明游标已与实际脱节。弃用游标做全量重取，避免「删文档后再同步什么都不回来」。
-      // 已存在的块仍由 SQL 去重跳过，不会重复。
+      // 自愈：本地有游标但思源里一条已同步高亮都没有。两种可能：
+      //  (a) 整库被清空/文档全删 → 该弃游标做全量重建；
+      //  (b) 刚同步完 attributes 表还没索引（实测 ~1.5s 异步）→ **不该**自愈，否则会
+      //      弃游标全量重取、又因索引仍空而无法去重 → 整库重复重建。
+      // 用「等一下再查一次」区分：真清空则仍为空 → 自愈；只是索引滞后则会补齐 →
+      // 改用补齐后的索引、保留游标、走正常增量（不重复）。
       if (cursor !== null && index.syncedHlIds.size === 0) {
-        cursor = null
+        const sleep = this.deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
+        await sleep(SELF_HEAL_SETTLE_MS)
+        if (aborted()) return { status: 'skipped' }
+        index = await this.deps.loadSyncedIndex()
+        if (index.syncedHlIds.size === 0) cursor = null
       }
 
       let pages = 0

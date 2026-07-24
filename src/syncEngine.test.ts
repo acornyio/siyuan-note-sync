@@ -33,6 +33,7 @@ function makeDeps(pages: ExportFeedResponse[], over: Partial<SyncEngineDeps> = {
       return { docId, added }
     },
     onStatus: () => {},
+    sleep: async () => {}, // 测试里免于真实 2s 等待
     ...over,
   }
   return { deps, getSaved: () => saved, writes, index }
@@ -71,11 +72,11 @@ describe('SyncEngine.sync', () => {
     expect(Object.keys(index.sourceDocMap)).toEqual(['s1'])
   })
 
-  it('self-heals: cursor set + empty SQL index (data wiped) → full re-fetch from null', async () => {
+  it('self-heals when index still empty after settle (真清空) → full re-fetch from null', async () => {
     const s1 = src('s1')
     const pages: ExportFeedResponse[] = [{ highlights: [hl('h1', s1)], nextCursor: '', done: true }]
     const fetchPage = vi.fn(async () => pages[0])
-    // 同连接 + 有游标，但 SQL 索引为空（用户删光了同步文档）→ 应弃用游标
+    // 同连接 + 有游标，但 SQL 索引两次都空（用户真删光了同步文档）→ 应弃用游标
     const conn = connectionId('https://api.acorny.io', 'tk')
     const { deps } = makeDeps(pages, {
       fetchPage,
@@ -84,6 +85,29 @@ describe('SyncEngine.sync', () => {
     const res = await new SyncEngine(deps).sync()
     expect(fetchPage).toHaveBeenCalledWith(expect.objectContaining({ cursor: null }))
     expect(res).toMatchObject({ status: 'completed', added: 1 })
+  })
+
+  it('does NOT self-heal when the empty index was a lagged reindex (recheck non-empty) → keeps cursor, no dup', async () => {
+    const s1 = src('s1')
+    const pages: ExportFeedResponse[] = [{ highlights: [hl('h1', s1)], nextCursor: '', done: true }]
+    const fetchPage = vi.fn(async () => pages[0])
+    const conn = connectionId('https://api.acorny.io', 'tk')
+    let calls = 0
+    const { deps } = makeDeps(pages, {
+      fetchPage,
+      loadState: async () => ({ lastCursor: 'END', connectionId: conn }),
+      // 第一次空（attributes 还没索引完），settle 后第二次补齐（h1 已索引）
+      loadSyncedIndex: async () => {
+        calls += 1
+        return calls === 1
+          ? { sourceDocMap: {}, syncedHlIds: new Set<string>() }
+          : { sourceDocMap: { s1: 'doc-s1' }, syncedHlIds: new Set<string>(['h1']) }
+      },
+    })
+    await new SyncEngine(deps).sync()
+    // 不自愈：游标保持 END（不会 fetch(null) 全量重取），h1 已在索引中被去重
+    expect(fetchPage).toHaveBeenCalledWith(expect.objectContaining({ cursor: 'END' }))
+    expect(fetchPage).not.toHaveBeenCalledWith(expect.objectContaining({ cursor: null }))
   })
 
   it('discards a foreign cursor when connection changed', async () => {
