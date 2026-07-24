@@ -213,7 +213,9 @@ Acorny 的 401/429 由 `data.status` 透传（kernel 层 `code:0`），交给 `a
 - **[必须先做] kernel 契约真机 spike（前置）**：整个去重模型押注「列表 markdown 末尾 IAL 落到高亮块」，此前提在实现 renderer/gateway **之前**就要用真实思源 kernel 验证，避免押错后返工。spike 需固化的 fixture：①`appendBlock` 内联 IAL 后，`custom-acorny-id` 落在哪个块（list / list-item）、有嵌套 note 时是否仍生效；②`appendBlock` 返回的新块 id 路径（`data[0].doOperations[0].id`）；③`createDocWithMd` 返回值形状（是否直接是 docId 字符串）；④`forwardProxy` 响应 `data.{status,body,headers}` 的真实形状（body 是否 base64、headers 键大小写）。对应实现计划 **Task 0**。
 - `forwardProxy` 对 Acorny 非 2xx 是否稳定透传 `data.status`，以及 `data.headers` 键大小写、`data.body` 编码（设计假设成立，实现时以真实响应固化最小回归测试）。
 - `appendBlock` 内联 IAL 是否被 kernel 正确解析为块自定义属性（`{: custom-acorny-id="..."}`）——这是原子去重的前提，实现时以真实响应验证并固化回归测试；若 kernel 不支持内联 IAL，退回 append+setBlockAttrs 并显式接受重复窗口（需在 §5/§7 记录降级）。
-- ~~不同 source 同名 hpath 冲突串数据~~ **已实测解除**：`createDocWithMd` 非 hpath 幂等、思源允许同名文档，同名不同 source 各自独立成文档（见 notes）。故用干净标题、无后缀。**新残留风险**：上次刚建某 source 文档后 <1.5s 内手动再同步，因 `attributes` 表异步索引，第二次 `loadSyncedIndex` 可能漏看 source-id → 建**重复文档**；`syncing` 门 + 分钟级自动同步已挡绝大多数，二期可加 session 内存缓存 source→doc 消除。
+- ~~不同 source 同名 hpath 冲突串数据~~ **已实测解除**：`createDocWithMd` 非 hpath 幂等、思源允许同名文档，同名不同 source 各自独立成文档（见 notes）。故用干净标题、无后缀。**残留风险（二期修）**：上次刚建某 source 文档后 <1.5s 内手动再同步（尤其"重新完整同步"），因 `attributes` 表异步索引，第二次 `loadSyncedIndex` 可能漏看 source-id → 建**重复文档**；`syncing` 门 + 分钟级自动同步已挡绝大多数。二期加 session 内存缓存 source→doc 彻底消除（本期评估：缓存会引入"缓存了被用户删掉的 docId → append 到不存在父块"及干扰 self-heal 判空的新风险，故延后）。
+- **source 锚定非原子（二期修）**：`createDocWithMd` 成功但 `setBlockAttrs(custom-acorny-source-id)` 失败时，留下无 SQL 锚定的孤儿文档，下次同步会再建一篇。已缓解：建文档后**先把 docId 记进内存索引**再写属性（同一 run 不重复建）；跨 run 孤儿罕见，二期加"识别并修复未锚定文档"的恢复逻辑。
+- **卸载中止粒度**：`SyncEngine` 在每页 fetch、每个 source 分组前查 `isAborted`；网关 `writeSource` 在**每条高亮 append 前**也查，卸载后不再发起下一次写请求（在途请求会自然结束）。
 - `createDocWithMd` 同 path 不覆盖的语义与我们「先 SQL 查 source-id 再决定建不建」是否有竞态（单机顺序执行，风险低）。
 - 移动端 `forwardProxy` / `fetchPost` 可用性需真机 QA。
 - bazaar 上架要求（`plugin.json` 字段、icon 160×160、preview 1024×768、README 双语）留发布阶段处理。

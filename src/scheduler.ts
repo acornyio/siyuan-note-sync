@@ -12,7 +12,9 @@ export function nextAutoDelayMs(result: SyncResult, pollIntervalMinutes: number)
     case 'auth_failed':
       return null
     case 'backoff':
-      return result.retryAfterSeconds * 1000
+      // 自动同步关闭（0=关闭，interval 为 null）时不做任何后台重试，尊重设置语义；
+      // 仅在自动同步开启时才安排 429/异常后的近端重试。
+      return interval === null ? null : result.retryAfterSeconds * 1000
     case 'completed':
     case 'skipped':
       return interval

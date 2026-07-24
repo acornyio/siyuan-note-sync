@@ -117,6 +117,8 @@ export default class AcornySyncPlugin extends Plugin {
     this.activeGateway = createSiyuanGateway(this.client, {
       notebookId: this.settings.notebookId,
       docFolderPath: this.settings.docFolderPath,
+      // 卸载后停止 writeSource 内的后续块写入。
+      isAborted: () => this.disposed,
     })
     try {
       const res = await this.engine.sync()
@@ -197,16 +199,24 @@ export default class AcornySyncPlugin extends Plugin {
       createActionElement: () => {
         const el = document.createElement('select')
         el.className = 'b3-select fn__block'
-        for (const nb of this.notebooks) {
-          const opt = document.createElement('option')
-          opt.value = nb.id
-          opt.textContent = nb.name
-          el.append(opt)
+        const fill = (nbs: Notebook[]) => {
+          el.replaceChildren()
+          for (const nb of nbs) {
+            const opt = document.createElement('option')
+            opt.value = nb.id
+            opt.textContent = nb.name
+            el.append(opt)
+          }
+          // <select> 不改动就不触发 change，值不会写进 draft。填充后立即把「当前显示的值」
+          // 写回 draft：已选过则显示该项，否则默认第一个（所见即所存），避免"显示了却没提交"。
+          if (draft.notebookId) el.value = draft.notebookId
+          if (nbs.length > 0) draft.notebookId = el.value
         }
-        // <select> 不改动就不触发 change，值不会写进 draft。构建后立即把「当前显示的值」
-        // 写回 draft：已选过则显示该项，否则默认第一个（所见即所存），避免"显示了却没提交"。
-        if (draft.notebookId) el.value = draft.notebookId
-        if (this.notebooks.length > 0) draft.notebookId = el.value
+        fill(this.notebooks) // 先用已有缓存填（可能为空）
+        // 每次打开设置都现拉一次并回填，覆盖"插件刚加载就打开设置、列表还没到"的异步竞态。
+        void this.client.lsNotebooks()
+          .then((nbs) => { this.notebooks = nbs; fill(nbs) })
+          .catch(() => {})
         el.addEventListener('change', () => { draft.notebookId = el.value })
         return el
       },
@@ -236,11 +246,6 @@ export default class AcornySyncPlugin extends Plugin {
       },
     })
 
-    // 后台加载笔记本列表填充下拉（打开设置面板时 createActionElement 读取 this.notebooks）。
-    void this.client
-      .lsNotebooks()
-      .then((nbs) => { this.notebooks = nbs })
-      .catch(() => { this.notebooks = [] })
   }
 
   private async loadPersisted(): Promise<void> {

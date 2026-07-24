@@ -60,6 +60,20 @@ describe('siyuanGateway.writeSource', () => {
     expect(f.appended.some((a) => a.markdown.includes('* h1'))).toBe(false)
   })
 
+  it('stops appending remaining highlights once isAborted becomes true', async () => {
+    const f = fakeClient()
+    // isAborted 在写完第一条后即为真（每次迭代开头检查）
+    const gw = createSiyuanGateway(f.client, {
+      notebookId: 'nb',
+      docFolderPath: '/Acorny',
+      isAborted: () => f.appended.length >= 1,
+    })
+    const index = empty()
+    const res = await gw.writeSource(s1, [hl('h1'), hl('h2'), hl('h3')], index)
+    expect(res.added).toBe(1)
+    expect(f.appended).toHaveLength(1)
+  })
+
   it('reuses an existing doc from the index without re-creating', async () => {
     const f = fakeClient()
     const gw = createSiyuanGateway(f.client, { notebookId: 'nb', docFolderPath: '/Acorny' })

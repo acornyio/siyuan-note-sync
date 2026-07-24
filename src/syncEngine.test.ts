@@ -95,11 +95,27 @@ describe('SyncEngine.sync', () => {
     expect(fetchPage).toHaveBeenCalledWith(expect.objectContaining({ cursor: null }))
   })
 
-  it('aborted mid-drain → skipped and no state persisted', async () => {
+  it('aborted before drain starts → skipped and no state persisted', async () => {
     const s1 = src('s1')
     const pages: ExportFeedResponse[] = [{ highlights: [hl('h1', s1)], nextCursor: '', done: true }]
     const { deps, getSaved } = makeDeps(pages, { isAborted: () => true })
     const res = await new SyncEngine(deps).sync()
+    expect(res).toEqual({ status: 'skipped' })
+    expect(getSaved()).toBeNull()
+  })
+
+  it('aborts between source groups mid-drain: later sources not written, no state saved', async () => {
+    const s1 = src('s1')
+    const s2 = src('s2')
+    const pages: ExportFeedResponse[] = [{ highlights: [hl('h1', s1), hl('h2', s2)], nextCursor: '', done: true }]
+    let aborted = false
+    const written: string[] = []
+    const { deps, getSaved } = makeDeps(pages, {
+      isAborted: () => aborted,
+      writeSource: async (source) => { written.push(source.id); aborted = true; return { docId: 'd', added: 0 } },
+    })
+    const res = await new SyncEngine(deps).sync()
+    expect(written).toEqual(['s1']) // abort 在 s1 后置真，s2 不再写
     expect(res).toEqual({ status: 'skipped' })
     expect(getSaved()).toBeNull()
   })

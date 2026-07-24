@@ -6,8 +6,12 @@ describe('nextAutoDelayMs', () => {
     expect(nextAutoDelayMs({ status: 'auth_failed' }, 5)).toBeNull()
   })
 
-  it('backoff → retryAfterSeconds in ms', () => {
+  it('backoff → retryAfterSeconds in ms when auto-sync enabled', () => {
     expect(nextAutoDelayMs({ status: 'backoff', retryAfterSeconds: 30 }, 5)).toBe(30_000)
+  })
+
+  it('backoff → null when auto-sync disabled (0), no background retry', () => {
+    expect(nextAutoDelayMs({ status: 'backoff', retryAfterSeconds: 30 }, 0)).toBeNull()
   })
 
   it('completed → interval in ms when polling enabled', () => {

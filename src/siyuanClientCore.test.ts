@@ -16,5 +16,9 @@ describe('extractAppendedBlockId', () => {
   it('extracts the block id from the REAL Task 0 appendBlock response (IAL on NodeList)', () => {
     const id = extractAppendedBlockId(appendBlockFixture.data)
     expect(id).toBe('20260723221941-y0cgfsy')
+    // 断言 fixture 确实是"IAL 落在 NodeList 上"的真实形态，防它退化成不含 IAL 的普通块而仍通过
+    const opHtml = (appendBlockFixture.data as Array<{ doOperations: Array<{ data: string }> }>)[0].doOperations[0].data
+    expect(opHtml).toContain('data-type="NodeList"')
+    expect(opHtml).toContain('custom-acorny-id="probe-1"')
   })
 })
