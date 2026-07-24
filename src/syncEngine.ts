@@ -53,6 +53,14 @@ export class SyncEngine {
 
       // 去重索引一律来自思源 SQL（不依赖本地缓存）：跨账号也安全，因为块属性即真相。
       const index = await this.deps.loadSyncedIndex()
+
+      // 自愈：本地有游标（声称同步过）但思源里一条已同步高亮都没有（文档被删 / 库被清），
+      // 说明游标已与实际脱节。弃用游标做全量重取，避免「删文档后再同步什么都不回来」。
+      // 已存在的块仍由 SQL 去重跳过，不会重复。
+      if (cursor !== null && index.syncedHlIds.size === 0) {
+        cursor = null
+      }
+
       let pages = 0
       let added = 0
 

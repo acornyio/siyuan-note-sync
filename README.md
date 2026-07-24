@@ -39,7 +39,7 @@ Each Acorny source (article/book) maps to one SiYuan document; each highlight be
 ## v1 limitations
 
 - **Append-only**: edits made on the Acorny side (note/quote) are not written back to already-synced blocks.
-- **Deletions are not tracked and not auto-restored**: if you delete a synced block, incremental sync will not re-append it (the feed advances by `updatedAt`), unless that highlight is later updated in Acorny or the cursor is reset.
+- **Single-block deletions are not tracked**: if you delete an individual synced block, incremental sync will not re-append it (the feed advances by `updatedAt`), unless that highlight is later updated in Acorny. **A full wipe self-heals**: if a saved cursor exists but no `custom-acorny-id` is found (all docs deleted), sync automatically drops the cursor and rebuilds. To force a rebuild after a partial delete, use the **"Full re-sync"** command.
 - **Single-instance serial idempotency**: de-duplication holds for a single running instance. Concurrent syncs from two windows/devices are not guaranteed collision-free (block attributes have no uniqueness constraint).
 - The plugin is disabled in publish mode (`disabledInPublish: true`) because it relies on `query/sql`.
 

@@ -1,4 +1,4 @@
-import { Plugin, Setting, showMessage } from 'siyuan'
+import { confirm, Plugin, Setting, showMessage } from 'siyuan'
 import type { AcornySettings, PluginState } from './types'
 import { fetchFeedPage } from './apiClient'
 import { createForwardProxyHttp } from './httpProxy'
@@ -50,6 +50,7 @@ export default class AcornySyncPlugin extends Plugin {
       callback: () => void this.runSync(true),
     })
     this.addCommand({ langKey: 'syncNow', hotkey: '', callback: () => void this.runSync(true) })
+    this.addCommand({ langKey: 'resyncAll', hotkey: '', callback: () => this.resyncAll() })
 
     await this.loadPersisted()
     // 卸载竞态：插件可能在 loadPersisted 期间已被禁用/卸载，别再继续建 engine/设置面板/启动同步。
@@ -136,6 +137,21 @@ export default class AcornySyncPlugin extends Plugin {
       this.setSyncingIndicator(false)
       this.activeGateway = null
     }
+  }
+
+  /**
+   * 忽略已保存游标、从头全量重新同步。用于：删文档后重建、或怀疑漏同步。
+   * 已存在的块靠 SQL 去重跳过（不会重复）；被删的文档会重新拉全量并重建。
+   */
+  private resyncAll(): void {
+    if (this.disposed || !this.ready || this.syncing) return
+    confirm(this.i18n.resyncAll, this.i18n.resyncConfirm, () => {
+      void (async () => {
+        this.state = { ...this.state, lastCursor: null }
+        await this.persist()
+        await this.runSync(true)
+      })()
+    })
   }
 
   /** 同步中给顶栏图标加/去旋转动效（思源内置 `fn__rotate`）。 */

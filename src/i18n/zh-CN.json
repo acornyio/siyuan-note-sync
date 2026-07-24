@@ -1,5 +1,7 @@
 {
   "syncNow": "Acorny：立即同步",
+  "resyncAll": "Acorny：重新完整同步",
+  "resyncConfirm": "将忽略已保存的游标、从头重新拉取全部高亮。已存在的块会被去重跳过；被删除的文档会重建。继续？",
   "syncing": "Acorny：同步中…",
   "syncedCount": "Acorny：新增 ${count} 条高亮。",
   "authFailed": "Acorny：导出令牌被拒——请在设置里更新。",

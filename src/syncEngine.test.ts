@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { SyncEngine, type SyncEngineDeps } from './syncEngine'
 import type { ExportFeedHighlight, ExportFeedResponse, ExportFeedSource, PluginState, SyncedIndex } from './types'
 import { AuthError, RateLimitError } from './apiClient'
+import { connectionId } from './connection'
 
 const src = (id: string): ExportFeedSource => ({ id, title: id, author: null, canonicalUrl: '', type: 'article' })
 const hl = (id: string, s: ExportFeedSource): ExportFeedHighlight => ({
@@ -68,6 +69,21 @@ describe('SyncEngine.sync', () => {
     const { deps, index } = makeDeps(pages)
     await new SyncEngine(deps).sync()
     expect(Object.keys(index.sourceDocMap)).toEqual(['s1'])
+  })
+
+  it('self-heals: cursor set + empty SQL index (data wiped) → full re-fetch from null', async () => {
+    const s1 = src('s1')
+    const pages: ExportFeedResponse[] = [{ highlights: [hl('h1', s1)], nextCursor: '', done: true }]
+    const fetchPage = vi.fn(async () => pages[0])
+    // 同连接 + 有游标，但 SQL 索引为空（用户删光了同步文档）→ 应弃用游标
+    const conn = connectionId('https://api.acorny.io', 'tk')
+    const { deps } = makeDeps(pages, {
+      fetchPage,
+      loadState: async () => ({ lastCursor: 'END', connectionId: conn }),
+    })
+    const res = await new SyncEngine(deps).sync()
+    expect(fetchPage).toHaveBeenCalledWith(expect.objectContaining({ cursor: null }))
+    expect(res).toMatchObject({ status: 'completed', added: 1 })
   })
 
   it('discards a foreign cursor when connection changed', async () => {

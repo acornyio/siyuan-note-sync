@@ -1,5 +1,7 @@
 {
   "syncNow": "Acorny: Sync now",
+  "resyncAll": "Acorny: Full re-sync (from scratch)",
+  "resyncConfirm": "This ignores the saved cursor and re-fetches ALL highlights from Acorny. Existing synced blocks are skipped (deduped); deleted docs are rebuilt. Continue?",
   "syncing": "Acorny: syncing…",
   "syncedCount": "Acorny: synced ${count} new highlight(s).",
   "authFailed": "Acorny: export token rejected — update it in Settings.",
