@@ -21,8 +21,8 @@
     "index.css"
   ],
   "typescript": {
-    "quoteStyle": "preferDouble",
-    "semiColons": "always",
+    "quoteStyle": "preferSingle",
+    "semiColons": "asi",
     "trailingCommas": "onlyMultiLine",
     "operatorPosition": "sameLine",
     "nextControlFlowPosition": "sameLine",
