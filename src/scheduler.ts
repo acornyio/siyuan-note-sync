@@ -3,6 +3,7 @@ import type { SyncResult } from './syncEngine'
 /**
  * 决定下次「自动」同步的延迟：
  * - auth_failed → null（暂停自动，直到一次手动同步重新启用）
+ * - index_error → null（索引不可信，重试只会继续重复建档，必须停到人工介入）
  * - backoff     → retryAfterSeconds（近端重试；成功后恢复常规节奏）
  * - completed/skipped → 常规 interval（interval 关闭则 null）
  */
@@ -10,6 +11,7 @@ export function nextAutoDelayMs(result: SyncResult, pollIntervalMinutes: number)
   const interval = pollIntervalMinutes > 0 ? pollIntervalMinutes * 60_000 : null
   switch (result.status) {
     case 'auth_failed':
+    case 'index_error':
       return null
     case 'backoff':
       // 自动同步关闭（0=关闭，interval 为 null）时不做任何后台重试，尊重设置语义；

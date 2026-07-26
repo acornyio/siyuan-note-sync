@@ -25,12 +25,26 @@ export function createSiyuanClient(): SiyuanClient {
     async createDocWithMd(notebook, path, markdown) {
       return post<string>('/api/filetree/createDocWithMd', { notebook, path, markdown })
     },
+    async getIDsByHPath(notebook, path) {
+      return (await post<string[] | null>('/api/filetree/getIDsByHPath', { notebook, path })) ?? []
+    },
+    async getHPathByID(id) {
+      return (await post<string | null>('/api/filetree/getHPathByID', { id })) ?? ''
+    },
+    async moveDocsByID(fromIDs, toID) {
+      await post<unknown>('/api/filetree/moveDocsByID', { fromIDs, toID })
+    },
     async appendBlock(parentID, data) {
       const opData = await post<unknown>('/api/block/appendBlock', { parentID, dataType: 'markdown', data })
       return extractAppendedBlockId(opData)
     },
     async setBlockAttrs(id, attrs) {
       await post<unknown>('/api/attr/setBlockAttrs', { id, attrs })
+    },
+    async getBlockKramdown(id) {
+      // 已删除/不存在的块返回 code:0 + data.kramdown:""（真机实测），不抛错。
+      const data = await post<{ kramdown?: string }>('/api/block/getBlockKramdown', { id })
+      return data?.kramdown ?? ''
     },
     async querySql<T>(stmt: string) {
       return post<T[]>('/api/query/sql', { stmt })

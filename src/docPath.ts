@@ -54,6 +54,10 @@ function sanitizeTitle(title: string | null): string {
  * 故不再加 source-id 后缀，避免污染可见文档标题。
  */
 export function buildDocHPath(folderPath: string, title: string | null): string {
-  const folder = `/${folderPath.replace(/^\/+/, '').replace(/\/+$/, '')}`
-  return `${folder}/${sanitizeTitle(title)}`
+  return `${normalizeFolderPath(folderPath)}/${sanitizeTitle(title)}`
+}
+
+/** 文件夹设置 → 规范 hpath 前缀（恰好一个前导 `/`，无尾随 `/`）。 */
+export function normalizeFolderPath(folderPath: string): string {
+  return `/${folderPath.replace(/^\/+/, '').replace(/\/+$/, '')}`
 }

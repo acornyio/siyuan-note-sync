@@ -1,18 +1,18 @@
 {
   "syncNow": "Acorny: Sync now",
-  "resyncAll": "Acorny: Full re-sync (from scratch)",
-  "resyncConfirm": "This ignores the saved cursor and re-fetches ALL highlights from Acorny. Existing synced blocks are skipped (deduped); deleted docs are rebuilt. Continue?",
   "syncing": "Acorny: syncing…",
   "syncedCount": "Acorny: synced ${count} new highlight(s).",
   "authFailed": "Acorny: export token rejected — update it in Settings.",
   "backoff": "Acorny: sync deferred (${seconds}s).",
+  "indexError": "Acorny: sync stopped — the synced-document index looks incomplete, so syncing was aborted to avoid creating duplicate documents. ${reason}",
   "setTokenFirst": "Acorny: set your export token in Settings first.",
   "selectNotebookFirst": "Acorny: choose a target notebook in Settings first.",
   "settingServerUrl": "Server URL",
   "settingExportToken": "Export token",
   "settingNotebook": "Target notebook",
-  "settingFolder": "Document folder (path within notebook)",
+  "settingFolder": "Document folder (path within notebook) — existing documents are moved here when you save",
   "settingSyncOnStartup": "Sync on startup",
   "settingPollInterval": "Auto-sync interval (minutes, 0 = off)",
-  "save": "Save"
+  "save": "Save",
+  "movedDocs": "Acorny: moved ${count} document(s) into the new folder."
 }

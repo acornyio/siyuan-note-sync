@@ -8,8 +8,8 @@ Each Acorny source (article/book) maps to one SiYuan document; each highlight be
 
 ## Features
 
-- **One-way incremental sync** from Acorny's highlight feed via cursor pagination.
-- **Native de-duplication** using block custom attributes (`custom-acorny-source-id` on the document, `custom-acorny-id` on each highlight) queried via SQL — no fragile text markers. Moving or renaming a document does not break matching.
+- **One-way reconciling sync**: every sync reads your full Acorny highlight feed and makes SiYuan match it — new highlights are added, and anything you deleted in SiYuan is rebuilt.
+- **Native de-duplication** using block custom attributes (`custom-acorny-source-id` on the document, `custom-acorny-id` on each highlight) queried via SQL — no fragile text markers. Moving or renaming a document does not break matching, and already-synced highlights are skipped (no duplicates).
 - **Edit protection**: already-synced highlight blocks are never modified or re-appended.
 - **Atomic writes**: a highlight block and its dedup attribute land in a single `appendBlock` call (inline IAL), so an interrupted sync cannot leave orphan blocks.
 - **Triggers**: top-bar icon, command palette, on-startup, and optional timed polling.
@@ -38,8 +38,8 @@ Each Acorny source (article/book) maps to one SiYuan document; each highlight be
 
 ## v1 limitations
 
-- **Append-only**: edits made on the Acorny side (note/quote) are not written back to already-synced blocks.
-- **Single-block deletions are not tracked**: if you delete an individual synced block, incremental sync will not re-append it (the feed advances by `updatedAt`), unless that highlight is later updated in Acorny. **A full wipe self-heals**: if a saved cursor exists but no `custom-acorny-id` is found (all docs deleted), sync automatically drops the cursor and rebuilds. To force a rebuild after a partial delete, use the **"Full re-sync"** command.
+- **Append-only for edits**: edits made on the Acorny side (note/quote) are not written back to already-synced highlight blocks. (Deletions in SiYuan, however, are rebuilt on the next sync — see Features.)
+- **Full-feed reconciliation**: each sync reads the entire feed rather than resuming from a cursor. This is what lets deletions self-heal, at the cost of re-reading the full feed every sync; for a personal highlight library that is cheap (dedup skips existing blocks).
 - **Single-instance serial idempotency**: de-duplication holds for a single running instance. Concurrent syncs from two windows/devices are not guaranteed collision-free (block attributes have no uniqueness constraint).
 - The plugin is disabled in publish mode (`disabledInPublish: true`) because it relies on `query/sql`.
 
@@ -61,4 +61,4 @@ pnpm lint:check     # eslint, no auto-fix
 pnpm build          # production build + package.zip
 ```
 
-Architecture: pure logic (`types`/`connection`/`apiClient`/`docPath`/`renderer`/`scheduler`/`syncEngine`) is siyuan-free and unit-tested; siyuan coupling is isolated to `siyuanClient`/`httpProxy`/`siyuanGateway`/`index`.
+Architecture: pure logic (`types`/`apiClient`/`docPath`/`renderer`/`scheduler`/`syncEngine`) is siyuan-free and unit-tested; siyuan coupling is isolated to `siyuanClient`/`httpProxy`/`siyuanGateway`/`index`.

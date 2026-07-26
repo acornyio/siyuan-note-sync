@@ -25,4 +25,9 @@ describe('nextAutoDelayMs', () => {
   it('skipped → interval (or null)', () => {
     expect(nextAutoDelayMs({ status: 'skipped' }, 0)).toBeNull()
   })
+
+  it('index_error → null even with polling on (stop, do not retry into duplicate docs)', () => {
+    // 索引不可信时重试只会继续制造重复文档，必须停到用户手动介入。
+    expect(nextAutoDelayMs({ status: 'index_error', reason: 'seed_truncated' }, 60)).toBeNull()
+  })
 })

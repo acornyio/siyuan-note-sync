@@ -33,21 +33,13 @@ export interface AcornySettings {
   pollIntervalMinutes: number
 }
 
+export type SyncStatus = 'idle' | 'syncing' | 'backoff' | 'auth_failed' | 'index_error'
+
 /**
- * 插件本地状态。仅存游标与连接身份——「已同步什么」以思源块属性为准（思源即真相）。
- * connectionId 变化则弃用 cursor，防跨账号游标重放漏数据。
+ * source→文档根块 id 的映射。跨同步存活在插件内存里，供 writeSource 无延迟解析文档；
+ * 高亮级去重不在这里——它靠每文档实时 getBlockKramdown（见 siyuanGateway）。
  */
-export interface PluginState {
-  lastCursor: string | null
-  connectionId: string | null
-}
-
-export type SyncStatus = 'idle' | 'syncing' | 'backoff' | 'auth_failed'
-
-/** 一次同步开始时从思源 SQL 拉出的全量已同步索引。 */
 export interface SyncedIndex {
   /** sourceId -> 文档根块 id。 */
   sourceDocMap: Record<string, string>
-  /** 已同步高亮 id 集合。 */
-  syncedHlIds: Set<string>
 }
