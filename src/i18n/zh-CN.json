@@ -17,5 +17,17 @@
   "movedDocs": "Acorny：已将 ${count} 篇文档移动到新文件夹。",
   "unexpectedError": "Acorny：同步遇到预料外的错误，详情见开发者控制台。",
   "selectNotebookPlaceholder": "— 请选择笔记本 —",
-  "confirmDestinationFirst": "Acorny：设置已保存。请核对目标笔记本与文件夹，然后手动点一次「立即同步」——自动同步会在你亲自跑过一次之后才启用。"
+  "confirmDestinationFirst": "Acorny：设置已保存。在你亲自跑过一次同步之前，自动同步不会启用 —— 请用设置页里的「保存并立即同步」，或点右上角工具栏的刷新图标。",
+  "settingServerUrlDesc": "Acorny 服务地址。除非自建服务，否则保持默认即可。",
+  "settingExportTokenDesc": "在 Acorny 中生成。仅保存在本机插件的 data.json 里，且只会发往上面这个服务地址。",
+  "settingNotebookDesc": "高亮会写入这个笔记本。未选择前不会同步任何内容。",
+  "settingFolderDesc": "笔记本内的路径。保存后，已有的 Acorny 文档会一并移动过去。",
+  "settingSyncOnStartupDesc": "需要你亲自跑过一次同步之后才会生效 —— 见下方。",
+  "settingPollIntervalDesc": "填 0 关闭后台同步。同样需要先手动同步一次。",
+  "settingSyncNow": "首次同步",
+  "settingSyncNowDescUnconfirmed": "在你亲自跑过一次之前，自动同步不会启用。请先核对下方的目标位置，然后点按钮 —— 它会保存设置并开始第一次同步。",
+  "settingSyncNowDescConfirmed": "目标位置已确认，自动同步已启用。你仍可以在这里随时同步，或点右上角工具栏的刷新图标。",
+  "saveAndSyncNow": "保存并立即同步",
+  "destinationPreview": "文档将写入：${notebook} → ${folder}",
+  "destinationUnset": "尚未选择笔记本 —— 不会写入任何内容。"
 }

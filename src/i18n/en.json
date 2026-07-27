@@ -17,5 +17,17 @@
   "movedDocs": "Acorny: moved ${count} document(s) into the new folder.",
   "unexpectedError": "Acorny: sync failed unexpectedly — see the developer console for details.",
   "selectNotebookPlaceholder": "— choose a notebook —",
-  "confirmDestinationFirst": "Acorny: settings saved. Check the target notebook and folder, then press “Sync now” once — automatic syncing starts only after you have run it yourself."
+  "confirmDestinationFirst": "Acorny: settings saved. Automatic syncing stays off until you run one sync yourself — use “Save and sync now” in Settings, or the refresh icon in the top-right toolbar.",
+  "settingServerUrlDesc": "Acorny API endpoint. Leave as is unless you self-host.",
+  "settingExportTokenDesc": "Generate one in Acorny. Stored in this plugin’s data.json on this device and only ever sent to the server URL above.",
+  "settingNotebookDesc": "Highlights are written into this notebook. Nothing syncs until you pick one.",
+  "settingFolderDesc": "Path inside the notebook. Existing Acorny documents are moved here when you save.",
+  "settingSyncOnStartupDesc": "Takes effect only after you have run one sync yourself — see below.",
+  "settingPollIntervalDesc": "0 disables background syncing. Also requires one manual sync first.",
+  "settingSyncNow": "First sync",
+  "settingSyncNowDescUnconfirmed": "Automatic syncing is off until you run it once yourself. Check the destination below, then press the button — this saves your settings and starts the first sync.",
+  "settingSyncNowDescConfirmed": "Destination confirmed — automatic syncing is active. You can still sync on demand here or from the refresh icon in the top-right toolbar.",
+  "saveAndSyncNow": "Save and sync now",
+  "destinationPreview": "Documents will be written to: ${notebook} → ${folder}",
+  "destinationUnset": "No notebook selected yet — nothing will be written."
 }

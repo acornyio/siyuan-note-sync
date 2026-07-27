@@ -268,24 +268,35 @@ export default class AcornySyncPlugin extends Plugin {
     this.setting.open(this.name)
   }
 
+  /**
+   * 把 draft 提交为正式设置并落盘，返回目标位置变更计划。**不触发同步**——
+   * 由调用方决定：思源自带的确认按钮走 'settings'（仅目标位置变了才同步），
+   * 面板里的「保存并立即同步」走 'manual'（同时确认目的地）。
+   */
+  private applyDraft(draft: AcornySettings): ReturnType<typeof planDestinationChange> {
+    const prev = { notebookId: this.settings.notebookId, docFolderPath: this.settings.docFolderPath }
+    this.settings = { ...draft }
+    const plan = planDestinationChange(prev, this.settings)
+    // 记住旧文件夹：迁移跑完之前（或万一没跑成），L3a 仍要能在那里找到已有文档。
+    if (plan.folderChanged) this.rememberFolder(prev.docFolderPath)
+    // 换笔记本同样要迁移：docMap 里的文档是按 block id 校验的，与笔记本无关，
+    // 不搬的话新高亮会继续写进旧笔记本，换笔记本形同无效。
+    if (plan.needsMigration) this.migrationPending = true
+    void this.persist()
+    // 保存后立即按新 interval 重排自动同步：0→正数要能启动，正数→0 要能停。
+    this.scheduleAuto(this.settings.pollIntervalMinutes > 0 ? this.settings.pollIntervalMinutes * 60_000 : null)
+    return plan
+  }
+
   private buildSettingPanel(): void {
     const draft: AcornySettings = { ...this.settings }
+    /** 目的地实时预览（笔记本名 / 文件夹）。用户踩的坑正是"保存那刻不知道会写到哪"。 */
+    let renderDestination: () => void = () => {}
     this.setting = new Setting({
       confirmCallback: () => {
-        const prev = { notebookId: this.settings.notebookId, docFolderPath: this.settings.docFolderPath }
-        this.settings = { ...draft }
-        const plan = planDestinationChange(prev, this.settings)
-        // 记住旧文件夹：迁移跑完之前（或万一没跑成），L3a 仍要能在那里找到已有文档。
-        if (plan.folderChanged) this.rememberFolder(prev.docFolderPath)
-        // 换笔记本同样要迁移：docMap 里的文档是按 block id 校验的，与笔记本无关，
-        // 不搬的话新高亮会继续写进旧笔记本，换笔记本形同无效。
-        if (plan.needsMigration) this.migrationPending = true
-        void this.persist()
-        // 保存后立即按新 interval 重排自动同步：0→正数要能启动，正数→0 要能停。
-        this.scheduleAuto(this.settings.pollIntervalMinutes > 0 ? this.settings.pollIntervalMinutes * 60_000 : null)
         // 只有目标位置变了才立刻同步，让新设置马上可见；改 token / 间隔不打扰。
         // 若此刻正有同步在跑，这次会被单飞门挡掉——migrationPending 已持久化，下一轮补做。
-        if (plan.destinationChanged) void this.runSync('settings')
+        if (this.applyDraft(draft).destinationChanged) void this.runSync('settings')
       },
     })
 
@@ -294,13 +305,18 @@ export default class AcornySyncPlugin extends Plugin {
       el.className = 'b3-text-field fn__block'
       el.type = 'text'
       el.value = draft[key]
-      el.addEventListener('input', () => { draft[key] = el.value })
+      el.addEventListener('input', () => { draft[key] = el.value; renderDestination() })
       return el
     }
 
-    this.setting.addItem({ title: this.i18n.settingServerUrl, createActionElement: textInput('serverUrl') })
+    this.setting.addItem({
+      title: this.i18n.settingServerUrl,
+      description: this.i18n.settingServerUrlDesc,
+      createActionElement: textInput('serverUrl'),
+    })
     this.setting.addItem({
       title: this.i18n.settingExportToken,
+      description: this.i18n.settingExportTokenDesc,
       createActionElement: () => {
         const el = document.createElement('input')
         el.className = 'b3-text-field fn__block'
@@ -312,6 +328,7 @@ export default class AcornySyncPlugin extends Plugin {
     })
     this.setting.addItem({
       title: this.i18n.settingNotebook,
+      description: this.i18n.settingNotebookDesc,
       createActionElement: () => {
         const el = document.createElement('select')
         el.className = 'b3-select fn__block'
@@ -334,19 +351,25 @@ export default class AcornySyncPlugin extends Plugin {
           // draft，保证所见即所存：已选过且笔记本仍在 → 显示该项；否则回落到空占位（= 未选）。
           el.value = draft.notebookId
           draft.notebookId = el.value
+          renderDestination()
         }
         fill(this.notebooks) // 先用已有缓存填（可能为空）
         // 每次打开设置都现拉一次并回填，覆盖"插件刚加载就打开设置、列表还没到"的异步竞态。
         void this.client.lsNotebooks()
           .then((nbs) => { this.notebooks = nbs; fill(nbs) })
           .catch(() => {})
-        el.addEventListener('change', () => { draft.notebookId = el.value })
+        el.addEventListener('change', () => { draft.notebookId = el.value; renderDestination() })
         return el
       },
     })
-    this.setting.addItem({ title: this.i18n.settingFolder, createActionElement: textInput('docFolderPath') })
+    this.setting.addItem({
+      title: this.i18n.settingFolder,
+      description: this.i18n.settingFolderDesc,
+      createActionElement: textInput('docFolderPath'),
+    })
     this.setting.addItem({
       title: this.i18n.settingSyncOnStartup,
+      description: this.i18n.settingSyncOnStartupDesc,
       createActionElement: () => {
         const el = document.createElement('input')
         el.className = 'b3-switch fn__flex-center'
@@ -358,6 +381,7 @@ export default class AcornySyncPlugin extends Plugin {
     })
     this.setting.addItem({
       title: this.i18n.settingPollInterval,
+      description: this.i18n.settingPollIntervalDesc,
       createActionElement: () => {
         const el = document.createElement('input')
         el.className = 'b3-text-field fn__block'
@@ -369,6 +393,41 @@ export default class AcornySyncPlugin extends Plugin {
       },
     })
 
+    // 首次同步入口。顶栏那个刷新图标新用户根本发现不了，而"手动跑一次"又是启用自动同步的
+    // 前提条件（见 destinationConfirmed），所以必须在配置现场给一个显眼的行动点。
+    this.setting.addItem({
+      title: this.i18n.settingSyncNow,
+      description: this.destinationConfirmed
+        ? this.i18n.settingSyncNowDescConfirmed
+        : this.i18n.settingSyncNowDescUnconfirmed,
+      direction: 'column',
+      createActionElement: () => {
+        const box = document.createElement('div')
+        const preview = document.createElement('div')
+        preview.className = 'ft__smaller ft__on-surface'
+        const button = document.createElement('button')
+        button.className = 'b3-button b3-button--outline'
+        button.textContent = this.i18n.saveAndSyncNow
+        button.addEventListener('click', () => {
+          // 先提交 draft，再以 'manual' 跑——这一步同时把目的地标记为已确认，
+          // 之后启动同步/定时同步才会放行。
+          this.applyDraft(draft)
+          void this.runSync('manual')
+        })
+        // 实时显示"文档会写到哪"，未选笔记本时明确提示，避免默认值被静默采用。
+        renderDestination = () => {
+          const nb = this.notebooks.find((n) => n.id === draft.notebookId)
+          preview.textContent = nb
+            ? this.i18n.destinationPreview
+              .replace('${notebook}', nb.name)
+              .replace('${folder}', normalizeFolderPath(draft.docFolderPath))
+            : this.i18n.destinationUnset
+        }
+        renderDestination()
+        box.append(preview, button)
+        return box
+      },
+    })
   }
 
   private async loadPersisted(): Promise<void> {
