@@ -188,9 +188,12 @@ describe('planDestinationChange', () => {
       .toEqual({ destinationChanged: false, folderChanged: false, needsMigration: false })
   })
 
-  it('does not migrate before a notebook has ever been chosen', () => {
-    // 首次配置：从空 notebook 到选定 notebook，此时没有任何已有文档需要搬。
-    expect(planDestinationChange(at('', '/Acorny'), at('nb-a', '/Acorny')))
-      .toEqual({ destinationChanged: true, folderChanged: false, needsMigration: false })
+  it('still migrates when no notebook was configured before (plugin state can be lost while docs remain)', () => {
+    // 曾以「之前没选过笔记本 = 不存在已有文档」为由跳过迁移。反例：用户删掉 data.json
+    // 重装插件，库里 446 篇文档原封不动，prev.notebookId 却是空——于是文档永远留在旧
+    // 文件夹，无论怎么改设置都搬不走。真正没东西可搬的场景由 migrateDocsToFolder 自己
+    // 处理（空列表连目标文件夹都不建），不需要在这里猜。
+    expect(planDestinationChange(at('', '/Acorny'), at('nb-a', '/Acorny2')))
+      .toEqual({ destinationChanged: true, folderChanged: true, needsMigration: true })
   })
 })

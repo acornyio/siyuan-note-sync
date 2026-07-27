@@ -31,5 +31,6 @@
   "destinationPreview": "Documents will be written to: ${notebook} → ${folder}",
   "destinationUnset": "No notebook selected yet — nothing will be written.",
   "resetInited": "Reset setup",
-  "resetInitedDone": "Acorny: setup reset. Automatic syncing is off until you press “Save and sync now” again."
+  "resetInitedDone": "Acorny: setup reset. Automatic syncing is off until you press “Save and sync now” again.",
+  "backoffWithReason": "Acorny: sync failed, retrying in ${seconds}s. Reason: ${reason}"
 }

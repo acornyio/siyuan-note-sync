@@ -163,6 +163,14 @@ describe('SyncEngine.sync (full reconciliation)', () => {
     expect(await new SyncEngine(deps).sync()).toEqual({ status: 'index_error', reason: 'too many' })
   })
 
+  it('carries the failure reason on the generic backoff so the UI can show it', async () => {
+    // 曾经只把原因交给 onStatus（index.ts 里是空函数），结果弹窗只说"同步已延后 60s"，
+    // 用户必须去翻控制台才知道发生了什么。
+    const { deps } = makeDeps([], { fetchPage: async () => { throw new Error('forwardProxy timeout') } })
+    expect(await new SyncEngine(deps).sync())
+      .toEqual({ status: 'backoff', retryAfterSeconds: 60, reason: 'forwardProxy timeout' })
+  })
+
   it('maps RateLimitError → backoff', async () => {
     const { deps } = makeDeps([], { fetchPage: async () => { throw new RateLimitError(12) } })
     expect(await new SyncEngine(deps).sync()).toEqual({ status: 'backoff', retryAfterSeconds: 12 })

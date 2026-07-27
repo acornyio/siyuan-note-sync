@@ -35,8 +35,11 @@ export function planDestinationChange(prev: SyncDestination, next: SyncDestinati
   return {
     destinationChanged: folderChanged || notebookChanged,
     folderChanged,
-    // 之前根本没选过笔记本 = 不存在已有文档，没什么可搬。
-    needsMigration: (folderChanged || notebookChanged) && prev.notebookId !== '',
+    // 目标位置一变就安排迁移，**不去猜「有没有东西可搬」**。曾按 `prev.notebookId !== ''`
+    // 判定"首次配置就没有已有文档"，反例是：用户删掉 data.json 重装插件，库里文档原封不动，
+    // prev.notebookId 却是空 → 文档永远留在旧文件夹，改多少次设置都搬不走。
+    // 真正没东西可搬时，migrateDocsToFolder 自己是彻底的 no-op（空列表连目标文件夹都不建）。
+    needsMigration: folderChanged || notebookChanged,
   }
 }
 

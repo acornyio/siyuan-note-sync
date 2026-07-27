@@ -193,7 +193,18 @@ export default class AcornySyncPlugin extends Plugin {
         // 手动/自动都要报，且停留久一点：这类错误会停掉自动同步，静默的话用户只会觉得"同步没反应"。
         showMessage(this.i18n.indexError.replace('${reason}', res.reason), 20000, 'error')
       } else if (res.status === 'backoff') {
-        if (manual) showMessage(this.i18n.backoff.replace('${seconds}', String(res.retryAfterSeconds)))
+        // 带上原因：不然用户只看到"延后 60 秒"，完全不知道发生了什么。
+        if (manual) {
+          showMessage(
+            res.reason
+              ? this.i18n.backoffWithReason
+                .replace('${seconds}', String(res.retryAfterSeconds))
+                .replace('${reason}', res.reason)
+              : this.i18n.backoff.replace('${seconds}', String(res.retryAfterSeconds)),
+            res.reason ? 20000 : undefined,
+            res.reason ? 'error' : undefined,
+          )
+        }
       }
       if (res.status !== 'skipped') {
         this.scheduleAuto(nextAutoDelayMs(res, this.settings.pollIntervalMinutes))

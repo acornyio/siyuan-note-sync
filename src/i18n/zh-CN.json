@@ -31,5 +31,6 @@
   "destinationPreview": "文档将写入：${notebook} → ${folder}",
   "destinationUnset": "尚未选择笔记本 —— 不会写入任何内容。",
   "resetInited": "重置初始化",
-  "resetInitedDone": "Acorny：初始化已重置。在你再次点「保存并立即同步」之前，不会有任何自动同步。"
+  "resetInitedDone": "Acorny：初始化已重置。在你再次点「保存并立即同步」之前，不会有任何自动同步。",
+  "backoffWithReason": "Acorny：同步失败，${seconds} 秒后重试。原因：${reason}"
 }

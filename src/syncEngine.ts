@@ -8,7 +8,8 @@ export type SyncResult =
   | { status: 'completed'; pages: number; added: number }
   | { status: 'skipped' }
   | { status: 'auth_failed' }
-  | { status: 'backoff'; retryAfterSeconds: number }
+  /** `reason` 仅在通用异常兜底时有值；429 限流没有额外原因可说。 */
+  | { status: 'backoff'; retryAfterSeconds: number; reason?: string }
   /** 已同步索引不可信（截断/熔断）。**不重试**——重试只会继续制造重复文档。 */
   | { status: 'index_error'; reason: string }
 
@@ -87,9 +88,12 @@ export class SyncEngine {
         this.deps.onStatus('backoff', `Rate limited, retry in ${error.retryAfterSeconds}s`)
         return { status: 'backoff', retryAfterSeconds: error.retryAfterSeconds }
       }
+      // 原因必须随结果一起返回：onStatus 只是通知，调用方拿不到它，
+      // 于是"同步已延后 60s"曾经完全不说为什么，用户只能去翻控制台。
+      const reason = error instanceof Error ? error.message : String(error)
       console.error('[Acorny] Unexpected sync error:', error)
-      this.deps.onStatus('backoff', error instanceof Error ? error.message : 'Sync failed')
-      return { status: 'backoff', retryAfterSeconds: 60 }
+      this.deps.onStatus('backoff', reason)
+      return { status: 'backoff', retryAfterSeconds: 60, reason }
     } finally {
       this.running = false
     }
