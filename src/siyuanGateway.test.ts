@@ -36,6 +36,7 @@ function fakeClient(opts: { attributesIndexed?: boolean } = {}) {
     },
     async setBlockAttrs(id, attrs) { const d = docs.get(id); if (d) Object.assign(d.attrs, attrs) },
     async getHPathByID(id) { return docs.get(id)?.path ?? '' },
+    async getDocNotebookId(id) { return docs.has(id) ? 'nb' : '' },
     async moveDocsByID(fromIDs, toID) {
       const target = docs.get(toID)!.path
       for (const id of fromIDs) { const d = docs.get(id)!; d.path = `${target}/${d.path.split('/').pop()}` }

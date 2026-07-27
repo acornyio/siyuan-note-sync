@@ -24,8 +24,13 @@ export interface SiyuanClient {
    * 路径不存在时返回空数组。
    */
   getIDsByHPath(notebookId: string, hpath: string): Promise<string[]>
-  /** 取某文档当前的 hpath（用于判断它在哪个文件夹）。不存在时返回空串。 */
+  /** 取某文档当前的 hpath（**笔记本内**相对路径）。不存在时返回空串。 */
   getHPathByID(blockId: string): Promise<string>
+  /**
+   * 取某块所属笔记本 id（`getBlockInfo.box`）。因为 hpath 是笔记本内相对路径，
+   * 判断"文档在不在目标位置"必须笔记本 + hpath 一起比。块不存在时该接口报错。
+   */
+  getDocNotebookId(blockId: string): Promise<string>
   /**
    * 批量把文档移到目标文档（思源的"文件夹"本身也是文档）之下。
    * **文档 id 不变**（真机实测），故 docMap / 锚定属性 / 已同步高亮全部保持有效。

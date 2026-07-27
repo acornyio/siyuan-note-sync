@@ -1,24 +1,32 @@
 import { describe, expect, it } from 'vitest'
-import { migrateDocsToFolder } from './folderMigration'
+import { migrateDocsToFolder, planDestinationChange } from './folderMigration'
 import type { SiyuanClient } from './siyuanClientCore'
 
-/** 内存版思源：文档有 hpath、锚定属性；删除即从 map 移除（kramdown 变空串）。 */
+const NB = 'nb'
+const OTHER_NB = 'nb-other'
+
+/**
+ * 内存版思源：文档有笔记本 + hpath + 锚定属性；删除即从 map 移除（kramdown 变空串）。
+ * hpath 是**笔记本内相对路径**——不同笔记本里的同名文件夹 hpath 完全一样，这正是跨笔记本
+ * 迁移必须同时比对 notebook 的原因。
+ */
 function fakeClient() {
-  const docs = new Map<string, { hpath: string; sourceId: string | null }>()
+  const docs = new Map<string, { notebookId: string; hpath: string; sourceId: string | null }>()
   const moves: { fromIDs: string[]; toID: string }[] = []
   const created: string[] = []
   let n = 0
-  const add = (hpath: string, sourceId: string | null) => {
+  const add = (hpath: string, sourceId: string | null, notebookId = NB) => {
     const id = `doc${++n}`
-    docs.set(id, { hpath, sourceId })
+    docs.set(id, { notebookId, hpath, sourceId })
     return id
   }
   const client = {
-    async getIDsByHPath(_nb: string, hpath: string) {
-      return [...docs].filter(([, d]) => d.hpath === hpath).map(([id]) => id)
+    async getIDsByHPath(nb: string, hpath: string) {
+      return [...docs].filter(([, d]) => d.notebookId === nb && d.hpath === hpath).map(([id]) => id)
     },
     async getHPathByID(id: string) { return docs.get(id)?.hpath ?? '' },
-    async createDocWithMd(_nb: string, hpath: string) { created.push(hpath); return add(hpath, null) },
+    async getDocNotebookId(id: string) { return docs.get(id)?.notebookId ?? '' },
+    async createDocWithMd(nb: string, hpath: string) { created.push(hpath); return add(hpath, null, nb) },
     async getBlockKramdown(id: string) {
       const d = docs.get(id)
       if (!d) return '' // 已删除
@@ -26,10 +34,11 @@ function fakeClient() {
     },
     async moveDocsByID(fromIDs: string[], toID: string) {
       moves.push({ fromIDs, toID })
-      const target = docs.get(toID)!.hpath
+      const target = docs.get(toID)!
       for (const id of fromIDs) {
         const d = docs.get(id)!
-        d.hpath = `${target}/${d.hpath.split('/').pop()}`
+        d.hpath = `${target.hpath}/${d.hpath.split('/').pop()}`
+        d.notebookId = target.notebookId // 跨笔记本移动：文档会落到目标所在的笔记本
       }
     },
   } as unknown as SiyuanClient
@@ -37,7 +46,7 @@ function fakeClient() {
 }
 
 const run = (f: ReturnType<typeof fakeClient>, docIds: string[], targetFolder = '/Acorny2') =>
-  migrateDocsToFolder(f.client, { notebookId: 'nb', targetFolder, docIds })
+  migrateDocsToFolder(f.client, { notebookId: NB, targetFolder, docIds })
 
 describe('migrateDocsToFolder', () => {
   it('moves anchored docs out of the old folder into the target folder', async () => {
@@ -103,11 +112,62 @@ describe('migrateDocsToFolder', () => {
     expect(f.moves).toEqual([])
   })
 
+  it('moves a doc sitting in a same-named folder of ANOTHER notebook (hpath alone is ambiguous)', async () => {
+    // 用户只换了笔记本、文件夹名不变。hpath 是笔记本内相对路径，两边都叫 /Acorny，
+    // 只比 hpath 前缀会误判成"已经在目标文件夹里"→ 永远搬不过去，换笔记本形同无效。
+    const f = fakeClient()
+    const stale = f.add('/Acorny/Deep Work', 's1', OTHER_NB)
+    const res = await migrateDocsToFolder(f.client, { notebookId: NB, targetFolder: '/Acorny', docIds: [stale] })
+    expect(res.moved).toBe(1)
+    expect(f.docs.get(stale)!.notebookId).toBe(NB)
+    expect(f.docs.get(stale)!.hpath).toBe('/Acorny/Deep Work')
+  })
+
+  it('still skips a doc already in the target folder OF THE TARGET NOTEBOOK', async () => {
+    const f = fakeClient()
+    const here = f.add('/Acorny/Deep Work', 's1', NB)
+    const res = await migrateDocsToFolder(f.client, { notebookId: NB, targetFolder: '/Acorny', docIds: [here] })
+    expect(res).toEqual({ moved: 0, skipped: 1 })
+    expect(f.moves).toEqual([])
+  })
+
   it('moves in one batched call rather than one request per doc', async () => {
     const f = fakeClient()
     const ids = ['a', 'b', 'c'].map((t) => f.add(`/Acorny/${t}`, `s-${t}`))
     await run(f, ids)
     expect(f.moves).toHaveLength(1)
     expect(f.moves[0].fromIDs).toEqual(ids)
+  })
+})
+
+describe('planDestinationChange', () => {
+  const at = (notebookId: string, docFolderPath: string) => ({ notebookId, docFolderPath })
+
+  it('flags migration when only the notebook changed (regression: notebook switch was a no-op)', () => {
+    // 曾经只在文件夹变更时置 migrationPending，于是"只换笔记本"会触发同步却不迁移；
+    // docMap 里的旧文档按 block id 校验照样通过，新高亮继续写进旧笔记本，换笔记本形同无效。
+    const plan = planDestinationChange(at('nb-a', '/Acorny'), at('nb-b', '/Acorny'))
+    expect(plan).toEqual({ destinationChanged: true, folderChanged: false, needsMigration: true })
+  })
+
+  it('flags migration when only the folder changed', () => {
+    expect(planDestinationChange(at('nb-a', '/Acorny'), at('nb-a', '/Acorny2')))
+      .toEqual({ destinationChanged: true, folderChanged: true, needsMigration: true })
+  })
+
+  it('flags nothing when the destination is unchanged', () => {
+    expect(planDestinationChange(at('nb-a', '/Acorny'), at('nb-a', '/Acorny')))
+      .toEqual({ destinationChanged: false, folderChanged: false, needsMigration: false })
+  })
+
+  it('treats equivalent folder spellings as unchanged (no pointless migration or sync)', () => {
+    expect(planDestinationChange(at('nb-a', 'Acorny'), at('nb-a', '/Acorny/')))
+      .toEqual({ destinationChanged: false, folderChanged: false, needsMigration: false })
+  })
+
+  it('does not migrate before a notebook has ever been chosen', () => {
+    // 首次配置：从空 notebook 到选定 notebook，此时没有任何已有文档需要搬。
+    expect(planDestinationChange(at('', '/Acorny'), at('nb-a', '/Acorny')))
+      .toEqual({ destinationChanged: true, folderChanged: false, needsMigration: false })
   })
 })

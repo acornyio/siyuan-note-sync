@@ -9,6 +9,37 @@ export interface MigrationOptions {
   docIds: string[]
 }
 
+/** 同步目标位置（笔记本 + 文件夹）。 */
+export interface SyncDestination {
+  notebookId: string
+  docFolderPath: string
+}
+
+export interface DestinationChangePlan {
+  /** 目标位置变了 → 值得立刻跑一次同步，让新设置马上可见。 */
+  destinationChanged: boolean
+  folderChanged: boolean
+  /** 需要把已有文档搬到新位置。 */
+  needsMigration: boolean
+}
+
+/**
+ * 判断保存设置后要做什么。抽成纯函数是为了让它可回归——这段逻辑原先内联在 `index.ts` 的
+ * `confirmCallback` 里，而 `index.ts` 因 import 'siyuan' 无法单测，于是漏掉了「只换笔记本」
+ * 这条分支：它触发同步却不迁移，docMap 里的旧文档按 block id 校验照样通过，新高亮继续写进
+ * 旧笔记本，换笔记本形同无效。
+ */
+export function planDestinationChange(prev: SyncDestination, next: SyncDestination): DestinationChangePlan {
+  const folderChanged = normalizeFolderPath(prev.docFolderPath) !== normalizeFolderPath(next.docFolderPath)
+  const notebookChanged = prev.notebookId !== next.notebookId
+  return {
+    destinationChanged: folderChanged || notebookChanged,
+    folderChanged,
+    // 之前根本没选过笔记本 = 不存在已有文档，没什么可搬。
+    needsMigration: (folderChanged || notebookChanged) && prev.notebookId !== '',
+  }
+}
+
 export interface MigrationResult {
   moved: number
   /** 已删除、非 Acorny 文档、或已在目标文件夹里而未移动的数量。 */
@@ -42,8 +73,11 @@ export async function migrateDocsToFolder(
     const kramdown = await client.getBlockKramdown(docId)
     // 空串 = 已删除；无锚定 = 不是 Acorny 建的文档。两种都不碰。
     if (kramdown === '' || parseDocSourceId(kramdown) === null) { skipped += 1; continue }
+    // 必须同时比对笔记本：hpath 是**笔记本内**相对路径，别的笔记本里的同名文件夹前缀完全一样，
+    // 只比 hpath 会把「旧笔记本的 /Acorny」误判成「已经在目标 /Acorny 里」→ 永远搬不过去。
+    const notebookId = await client.getDocNotebookId(docId)
     const hpath = await client.getHPathByID(docId)
-    if (hpath.startsWith(prefix)) { skipped += 1; continue } // 已经在目标文件夹里
+    if (notebookId === opts.notebookId && hpath.startsWith(prefix)) { skipped += 1; continue }
     toMove.push(docId)
   }
 

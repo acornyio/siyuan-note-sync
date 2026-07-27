@@ -4,7 +4,7 @@ import { fetchFeedPage } from './apiClient'
 import { createForwardProxyHttp } from './httpProxy'
 import { createSiyuanClient, type Notebook } from './siyuanClient'
 import { createSiyuanGateway, type SiyuanGateway } from './siyuanGateway'
-import { migrateDocsToFolder } from './folderMigration'
+import { migrateDocsToFolder, planDestinationChange } from './folderMigration'
 import { normalizeFolderPath } from './docPath'
 import { SyncEngine } from './syncEngine'
 import { nextAutoDelayMs } from './scheduler'
@@ -227,19 +227,18 @@ export default class AcornySyncPlugin extends Plugin {
       confirmCallback: () => {
         const prev = { notebookId: this.settings.notebookId, docFolderPath: this.settings.docFolderPath }
         this.settings = { ...draft }
-        const folderChanged = normalizeFolderPath(prev.docFolderPath) !== normalizeFolderPath(this.settings.docFolderPath)
-        const destinationChanged = folderChanged || prev.notebookId !== this.settings.notebookId
-        if (folderChanged) {
-          // 记住旧文件夹：迁移跑完之前（或万一没跑成），L3a 仍要能在那里找到已有文档。
-          this.rememberFolder(prev.docFolderPath)
-          this.migrationPending = true
-        }
+        const plan = planDestinationChange(prev, this.settings)
+        // 记住旧文件夹：迁移跑完之前（或万一没跑成），L3a 仍要能在那里找到已有文档。
+        if (plan.folderChanged) this.rememberFolder(prev.docFolderPath)
+        // 换笔记本同样要迁移：docMap 里的文档是按 block id 校验的，与笔记本无关，
+        // 不搬的话新高亮会继续写进旧笔记本，换笔记本形同无效。
+        if (plan.needsMigration) this.migrationPending = true
         void this.persist()
         // 保存后立即按新 interval 重排自动同步：0→正数要能启动，正数→0 要能停。
         this.scheduleAuto(this.settings.pollIntervalMinutes > 0 ? this.settings.pollIntervalMinutes * 60_000 : null)
         // 只有目标位置变了才立刻同步，让新设置马上可见；改 token / 间隔不打扰。
         // 若此刻正有同步在跑，这次会被单飞门挡掉——migrationPending 已持久化，下一轮补做。
-        if (destinationChanged) void this.runSync(true)
+        if (plan.destinationChanged) void this.runSync(true)
       },
     })
 

@@ -31,6 +31,10 @@ export function createSiyuanClient(): SiyuanClient {
     async getHPathByID(id) {
       return (await post<string | null>('/api/filetree/getHPathByID', { id })) ?? ''
     },
+    async getDocNotebookId(id) {
+      // 块不存在时内核返回 code:-1，post 会抛——迁移中止、下次同步重试，不静默走错分支。
+      return (await post<{ box?: string }>('/api/block/getBlockInfo', { id })).box ?? ''
+    },
     async moveDocsByID(fromIDs, toID) {
       await post<unknown>('/api/filetree/moveDocsByID', { fromIDs, toID })
     },
