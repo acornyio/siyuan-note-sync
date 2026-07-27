@@ -1,7 +1,7 @@
 # 同步引擎逻辑详解（供 review）
 
-**Date:** 2026-07-26（D-7/D-8 补充于 2026-07-27）
-**代码基线:** 分支 `fix/settings-draft-reset`（尚未提交）
+**Date:** 2026-07-26（F/G/H 系列补充于 2026-07-27）
+**代码基线:** `main`（PR #2 已合并，v1.1.0）
 **目的:** 把「文档怎么建、内容怎么追加、怎么判重、怎么结束」逐条讲清楚，并列出实测确认的缺陷。
 
 > ✅ **§7 的 D-1 ~ D-4、D-7、D-8 已修复**（见 §10 修复记录）。§1–§6 描述的逻辑现已与代码一致；
@@ -393,8 +393,9 @@ getBlockKramdown(新文档) → 空 → present 为空集
 | `src/siyuanClientCore.ts` | 纯逻辑：`parseSyncedHighlightIds`、id 提取 ← **D-4 在这里** |
 | `src/docPath.ts` | 标题清洗 → hpath |
 | `src/renderer.ts` | 高亮 → markdown + 内联 IAL |
-| `src/scheduler.ts` | 下次自动同步的延迟决策 |
-| `src/apiClient.ts` | Acorny Export API 客户端 |
+| `src/scheduler.ts` | 下次自动同步的延迟决策；`mayRunSync`（初始化门槛）、`pickNotebookValue`、`readInitedFlag` |
+| `src/folderMigration.ts` | 位置对账 `findDocsOutsideFolder`、迁移 `migrateDocsToFolder`、历史文件夹 `rememberFolders` |
+| `src/apiClient.ts` | Acorny Export API 客户端；`retryTransient` / `isTransientFeedError` 瞬时故障重试 |
 | `scripts/kernel-e2e-probe.mts` | 真实内核端到端探针（手动跑） |
 | `docs/superpowers/notes/2026-07-23-kernel-contract-fixtures.md` | kernel 契约实测记录（⚠️ 其中「删除→getBlockAttrs 返回空 {}」一条已被 D-7 推翻） |
 
@@ -429,7 +430,25 @@ getBlockKramdown(新文档) → 空 → present 为空集
 
 **熔断的计费口径为什么是「索引查不到」而不是「所有新建」:** 最初按所有新建计费，导致「用户清空整个 Acorny 文件夹后重新同步」被误判为异常——重建量必然 ≥ 原基线。而这类新建有正面证据（docMap 有条目 + `getBlockAttrs` 实时核实文档确已删除），属合法重建。真正的失效 signature 是「索引条目凭空消失」，只该对它计费。
 
-新增 47 个测试（50 → 97），全部通过；lint / typecheck / build 全绿。
+单测 50 → 129，全部通过；lint / typecheck / build 全绿。
+
+### 后续几轮修复（G / H 系列，2026-07-27）
+
+前面几轮修的都是「重复建档」这条链。上线后用户实测又暴露出另外几类问题，
+共同点是**我把本该状态驱动的东西写成了事件驱动，或者凭代码推演而没有看真实数据**。
+
+| 编号 | 缺陷 | 修法 |
+|---|---|---|
+| **G-1** | 笔记本下拉在用户没碰过时被「所见即所存」写进 draft，目标笔记本被静默定死 | 新增「请选择笔记本」空占位；回写抽成 `pickNotebookValue` |
+| **G-2** | 启动同步 / 定时同步 / 保存后同步都不检查目的地是否被确认过，「填个 token 点保存」就开始写入 | 新增持久化 `inited`：用户亲自跑过一次同步之前，三条自动路径全部不跑。`inited`（客观事实）与 `syncOnStartup`（用户偏好）**必须是两个变量** |
+| **G-3** | `pickNotebookValue` 的前身在列表未加载时无条件回写，把持久化的 `notebookId` 清成空——界面显示「未选择」，一点保存就真的丢配置 | 列表为空（未加载）时原样保留 |
+| **G-4** | 思源卸载插件**不删** `data/storage/petal` 下的数据，「删掉重装」不会回到未初始化状态 | 设置页提供「重置初始化」按钮 |
+| **H-1** | 迁移只在 `planDestinationChange` 检测到**设置变更**时安排一次。设置成 A、文档在 B 之后，再点多少次保存都判定「没变化」，永久对不上 | 改为**状态驱动**：新增 `findDocsOutsideFolder`，每次同步一次联表查询实测「哪些文档不在目标位置」，不一致就搬。删除 `migrationPending` 与 `needsMigration` |
+| **H-2** | 一页翻页失败就让整轮同步作废并退避 60 秒（真机遇到 `net/http: TLS handshake timeout`） | `retryTransient`：4 次尝试、1s/2s/4s 退避；401/429/其它 4xx 不重试；`forwardProxy` 超时 15s → 30s |
+| **H-3** | 通用异常兜底只把原因交给 `onStatus`，而它在 `index.ts` 里是空函数——弹窗只说「已延后 60s」 | `backoff` 结果带上 `reason`，弹窗显示原因 |
+
+**H-1 与当年的增量游标是同一类错误**：同步早已改成全量对账，迁移却还停在一次性事件。
+凡是「配置声明的目标状态」与「实际状态」可能漂移的地方，都必须每轮对账，不能靠事件触发。
 
 ### 独立 review 发现的追加缺陷（2026-07-27）
 

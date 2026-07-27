@@ -1,6 +1,6 @@
 {
   "name": "siyuan-note-sync",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Sync Acorny highlights into SiYuan notes.",
   "main": ".src/index.js",
   "scripts": {

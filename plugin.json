@@ -2,10 +2,14 @@
   "name": "siyuan-note-sync",
   "author": "acornyio",
   "url": "https://github.com/acornyio/siyuan-note-sync",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "minAppVersion": "3.7.0",
-  "backends": ["all"],
-  "frontends": ["all"],
+  "backends": [
+    "all"
+  ],
+  "frontends": [
+    "all"
+  ],
   "disabledInPublish": true,
   "displayName": {
     "default": "Acorny Sync",
@@ -19,5 +23,10 @@
     "default": "README.md",
     "zh-CN": "README.zh-CN.md"
   },
-  "keywords": ["acorny", "highlight", "sync", "readwise"]
+  "keywords": [
+    "acorny",
+    "highlight",
+    "sync",
+    "readwise"
+  ]
 }
