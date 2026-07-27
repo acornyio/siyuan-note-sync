@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { createSiyuanGateway, MIN_NEW_DOCS_PER_SYNC, SEED_ROW_LIMIT, SyncIndexError } from './siyuanGateway'
+import {
+  createSiyuanGateway, MIN_NEW_DOCS_PER_SYNC, POINT_LOOKUP_LIMIT, SEED_ROW_LIMIT, SyncIndexError,
+} from './siyuanGateway'
 import type { SiyuanClient } from './siyuanClientCore'
 import type { ExportFeedHighlight, ExportFeedSource, SyncedIndex } from './types'
 
@@ -338,6 +340,49 @@ describe('siyuanGateway 重复文档熔断', () => {
     const res = await gw(f.client, {}).writeSource(s1, [hl('h1')], empty())
     expect(res.docId).not.toBe(other)
     expect(f.docs.get(other)!.hlIds).toEqual([]) // 别人的文档没被写脏
+  })
+
+  it('does not charge the budget for a TOCTOU rebuild (it is a verified deletion, like any other)', async () => {
+    // 重试前会把 docMap 条目删掉，下一轮 resolveDoc 便看不到 cached → 曾被当成
+    // 「索引完全不知道这个 source」而计费，和「实时核实过的删除不计费」的原则矛盾。
+    // 这里把预算正好用满，再做一次 TOCTOU 重建：若仍计费就会抛，说明退化。
+    const f = fakeClient()
+    const seeded = await seedExistingDocs(f, 1) // baseline 1 → 预算 max(50, 1) = 50
+    const map: Record<string, string> = {}
+    let sabotage = false
+    const client: SiyuanClient = {
+      ...f.client,
+      async appendBlock(parentId, md) {
+        if (sabotage) { sabotage = false; f.remove(parentId) }
+        if (!f.docs.has(parentId)) throw new Error(`parent block not found: ${parentId} v3.7.3`)
+        return f.client.appendBlock(parentId, md)
+      },
+    }
+    const g = gw(client, map)
+    const index = await g.loadSyncedIndex()
+    // 用满预算：50 个全新 source（这些是该计费的）
+    for (let i = 0; i < MIN_NEW_DOCS_PER_SYNC; i++) {
+      const s: ExportFeedSource = { id: `new-${i}`, title: `New ${i}`, author: null, canonicalUrl: '', type: 'article' }
+      await g.writeSource(s, [hl('h1', s)], index)
+    }
+    // 预算已满。对已知 source 触发一次 TOCTOU 重建——不该再计费，因此不该抛。
+    sabotage = true
+    const res = await g.writeSource(seeded[0], [hl('h1', seeded[0])], index)
+    expect(res.added).toBe(1)
+  })
+
+  it('caps how many same-hpath candidates it will probe', async () => {
+    // getIDsByHPath 的返回没有上限时，同名文档一多就会线性发请求。与点查保持一致的防御。
+    const f = fakeClient()
+    let kramdownCalls = 0
+    const client: SiyuanClient = {
+      ...f.client,
+      async getIDsByHPath() { return Array.from({ length: 300 }, (_, i) => `ghost-${i}`) },
+      async getBlockKramdown(id) { kramdownCalls += 1; return f.client.getBlockKramdown(id) },
+    }
+    await createSiyuanGateway(client, { notebookId: 'nb', docFolderPath: '/Acorny', docMap: {} })
+      .writeSource(s1, [], empty())
+    expect(kramdownCalls).toBeLessThanOrEqual(POINT_LOOKUP_LIMIT)
   })
 
   it('self-heals when appendBlock reports the parent doc vanished mid-write', async () => {

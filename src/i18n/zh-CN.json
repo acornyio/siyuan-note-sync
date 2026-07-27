@@ -14,5 +14,6 @@
   "settingSyncOnStartup": "启动时同步",
   "settingPollInterval": "自动同步间隔（分钟，0=关闭）",
   "save": "保存",
-  "movedDocs": "Acorny：已将 ${count} 篇文档移动到新文件夹。"
+  "movedDocs": "Acorny：已将 ${count} 篇文档移动到新文件夹。",
+  "unexpectedError": "Acorny：同步遇到预料外的错误，详情见开发者控制台。"
 }

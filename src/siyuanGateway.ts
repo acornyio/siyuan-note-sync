@@ -24,7 +24,7 @@ export const SEED_ROW_LIMIT = 100_000
  * 取值要能覆盖真实重复规模——事故里单个 source 曾有 88 篇文档，而删除后 attributes 表还会
  * 返回滞后行约 3s，上限太小会让「前若干条都是已删的幽灵行」把活着的那篇挤出候选，进而重复建档。
  */
-const POINT_LOOKUP_LIMIT = 128
+export const POINT_LOOKUP_LIMIT = 128
 
 /**
  * 单次同步允许新建的文档数下限。实际预算 = max(本数, 同步开始时的已知 source 数)，
@@ -140,7 +140,9 @@ export function createSiyuanGateway(
     // 当前文件夹优先，再找历史文件夹——用户改过目标位置、老文档还没迁走时靠后者命中。
     for (const folder of [opts.docFolderPath, ...(opts.knownFolders ?? [])]) {
       const hpath = buildDocHPath(folder, source.title)
-      for (const id of await client.getIDsByHPath(opts.notebookId, hpath)) {
+      // 与点查同样设上限：每个候选都是一次 kramdown 请求，同名文档一多就线性发请求。
+      const candidates = (await client.getIDsByHPath(opts.notebookId, hpath)).slice(0, POINT_LOOKUP_LIMIT)
+      for (const id of candidates) {
         const present = await readDocOf(id, source.id)
         if (present) return { docId: id, present }
       }
@@ -174,14 +176,20 @@ export function createSiyuanGateway(
   }
 
   /**
-   * 解析该 source 的文档 id，三级下降——任一级命中都不会新建：
-   *   1. docMap（内存 + 持久化）→ getBlockAttrs 无延迟校验
-   *   2. SQL 点查该 source → 校验后回填 docMap
-   *   3. 都没有 → 过熔断 → createDocWithMd 新建
+   * 解析该 source 的文档 id，**四级下降**——任一级命中都不会新建：
+   *   L1  docMap（内存 + 持久化）→ readDocOf / getBlockKramdown 零延迟校验
+   *   L3a getIDsByHPath 按路径查（零延迟，覆盖刚建完那 1–2s 窗口）
+   *   L3b SQL 按 source-id 点查（滞后 1–2s，覆盖文档被改名/移走）
+   *   都没有 → 过熔断 → createDocWithMd 新建
+   * （L2 是 loadSyncedIndex 的批量种子，在同步开始时一次性补进 docMap，不在本函数里。）
+   *
+   * `verifiedDeletion` = 调用方已实时核实过原文档确实没了（TOCTOU 重试）。这类重建有正面
+   * 证据、不是索引可疑，和「docMap 有条目但文档已删」同等对待，**不计入熔断预算**。
    */
   async function resolveDoc(
     source: ExportFeedSource,
     index: SyncedIndex,
+    verifiedDeletion = false,
   ): Promise<{ docId: string; present: Set<string> }> {
     const cached = index.sourceDocMap[source.id]
     if (cached) {
@@ -191,7 +199,7 @@ export function createSiyuanGateway(
     }
     // 有过条目 = 索引记得这个 source，只是文档被删/被改。这是**实时核实过**的删除，
     // 属于合法重建，不计入熔断预算（否则清空文件夹后的整库重建会被误伤）。
-    const knownToIndex = Boolean(cached)
+    const knownToIndex = Boolean(cached) || verifiedDeletion
 
     // docMap 未命中 ≠ 文档不存在（data.json 丢失、种子失效、上次建档后没落盘……）。
     // createDocWithMd 非 hpath 幂等，所以下面两级是"绝不重复建档"的关键保证，不能省。
@@ -230,7 +238,8 @@ export function createSiyuanGateway(
     // 最多重来一轮：文档中途消失时，必须对**重建后的空文档重跑整个列表**，而不是接着往下写——
     // 那些因"旧文档里已有"而被跳过的高亮，在新文档里并不存在，接着写会把它们漏掉。
     for (let attempt = 0; ; attempt += 1) {
-      const target = await resolveDoc(source, index)
+      // attempt > 0 = 上一轮亲眼看到内核报「父块不存在」，属实时核实过的删除，不该计熔断预算。
+      const target = await resolveDoc(source, index, attempt > 0)
       try {
         let added = 0
         for (const h of highlights) {

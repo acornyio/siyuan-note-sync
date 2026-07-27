@@ -3,7 +3,7 @@ import type { AcornySettings } from './types'
 import { fetchFeedPage } from './apiClient'
 import { createForwardProxyHttp } from './httpProxy'
 import { createSiyuanClient, type Notebook } from './siyuanClient'
-import { createSiyuanGateway, type SiyuanGateway } from './siyuanGateway'
+import { createSiyuanGateway, SyncIndexError, type SiyuanGateway } from './siyuanGateway'
 import { migrateDocsToFolder, planDestinationChange, rememberFolders } from './folderMigration'
 import { normalizeFolderPath } from './docPath'
 import { SyncEngine } from './syncEngine'
@@ -173,6 +173,14 @@ export default class AcornySyncPlugin extends Plugin {
       if (res.status !== 'skipped') {
         this.scheduleAuto(nextAutoDelayMs(res, this.settings.pollIntervalMinutes))
       }
+    } catch (error) {
+      // 防御性兜底：所有调用点都是 `void this.runSync(...)`，任何漏网异常都会变成
+      // unhandled rejection 并且悄无声息。engine.sync() 自己吞掉全部错误，正常到不了这里；
+      // 到了就说明是 engine 之外的路径（迁移、网关构造等）出了预料外的问题。
+      console.error('[Acorny] Sync failed unexpectedly:', error)
+      if (manual) showMessage(this.i18n.unexpectedError, 20000, 'error')
+      // 仍按常规节奏重排，避免一次意外把自动同步永久停掉。
+      this.scheduleAuto(this.settings.pollIntervalMinutes > 0 ? this.settings.pollIntervalMinutes * 60_000 : null)
     } finally {
       this.syncing = false
       this.setSyncingIndicator(false)
@@ -214,7 +222,15 @@ export default class AcornySyncPlugin extends Plugin {
     } catch (error) {
       // 保持 migrationPending=true，下次同步再试。迁移失败不该让整轮同步失败：
       // 旧文件夹还在 knownFolders 里，L3a 照样找得到那些文档，不会重复建档，最多是位置没变。
-      console.error('[Acorny] Folder migration failed, will retry next sync:', error)
+      if (error instanceof SyncIndexError) {
+        // 种子不可信 → 迁移无从谈起，但这不是"迁移坏了"，日志必须能区分，否则排查时因果颠倒。
+        // **刻意不 re-throw**：runSync 只有 try/finally 且调用点都是 `void this.runSync(...)`，
+        // 抛出会变成 unhandled rejection；而且会跳过下面 engine.sync() 对 index_error 的
+        // UI 提示——紧接着的 sync 会再查一次索引并把 index_error 正常报给用户。
+        console.error('[Acorny] Skipped folder migration: synced index not trustworthy:', error.message)
+      } else {
+        console.error('[Acorny] Folder migration failed, will retry next sync:', error)
+      }
     }
   }
 

@@ -14,5 +14,6 @@
   "settingSyncOnStartup": "Sync on startup",
   "settingPollInterval": "Auto-sync interval (minutes, 0 = off)",
   "save": "Save",
-  "movedDocs": "Acorny: moved ${count} document(s) into the new folder."
+  "movedDocs": "Acorny: moved ${count} document(s) into the new folder.",
+  "unexpectedError": "Acorny: sync failed unexpectedly — see the developer console for details."
 }
