@@ -1,22 +1,46 @@
 import { describe, expect, it } from 'vitest'
-import { isInteractiveTrigger, mayRunSync, nextAutoDelayMs, type SyncTrigger } from './scheduler'
+import { isInteractiveTrigger, mayRunSync, nextAutoDelayMs, readInitedFlag, type SyncTrigger } from './scheduler'
 
 describe('mayRunSync', () => {
   const AUTO: SyncTrigger[] = ['startup', 'timer', 'settings']
 
-  it('blocks every automatic trigger until the user has confirmed the destination once', () => {
+  it('blocks every automatic trigger until initial setup is complete', () => {
     // 目标笔记本默认就是列表第一个、文件夹默认 /Acorny——用户还没确认过这套目的地，
     // 却已经有三条路径会自动往笔记里写。首次写入必须由用户显式发起。
+    // 注意 syncOnStartup 本身仍默认 true：它是"用户想不想开机同步"的偏好，
+    // 而 inited 是"初始化完没完"的事实，两者不该混成一个开关。
     for (const t of AUTO) expect(mayRunSync(t, false)).toBe(false)
   })
 
-  it('always allows a manual sync — that is how the destination gets confirmed', () => {
+  it('always allows a manual sync — that is how initialization completes', () => {
     expect(mayRunSync('manual', false)).toBe(true)
     expect(mayRunSync('manual', true)).toBe(true)
   })
 
-  it('allows every trigger once the destination is confirmed', () => {
+  it('allows every trigger once initialization is complete', () => {
     for (const t of AUTO) expect(mayRunSync(t, true)).toBe(true)
+  })
+})
+
+describe('readInitedFlag', () => {
+  it('is false on a fresh install (nothing persisted yet)', () => {
+    expect(readInitedFlag({})).toBe(false)
+    expect(readInitedFlag(null)).toBe(false)
+  })
+
+  it('reads the persisted flag', () => {
+    expect(readInitedFlag({ inited: true })).toBe(true)
+    expect(readInitedFlag({ inited: false })).toBe(false)
+  })
+
+  it('accepts the previous field name so upgrading users are not locked out again', () => {
+    // 该标记先前叫 destinationConfirmed。若升级后读不到，已经在正常同步的老用户
+    // 会被重新上锁、自动同步静默停摆——属于升级即回归。
+    expect(readInitedFlag({ destinationConfirmed: true })).toBe(true)
+  })
+
+  it('prefers the new field when both are present', () => {
+    expect(readInitedFlag({ inited: false, destinationConfirmed: true })).toBe(false)
   })
 })
 

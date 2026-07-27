@@ -7,7 +7,9 @@ import { createSiyuanGateway, SyncIndexError, type SiyuanGateway } from './siyua
 import { migrateDocsToFolder, planDestinationChange, rememberFolders } from './folderMigration'
 import { normalizeFolderPath } from './docPath'
 import { SyncEngine } from './syncEngine'
-import { isInteractiveTrigger, mayRunSync, nextAutoDelayMs, type SyncTrigger } from './scheduler'
+import {
+  isInteractiveTrigger, mayRunSync, nextAutoDelayMs, readInitedFlag, type SyncTrigger,
+} from './scheduler'
 
 const STORAGE = 'acorny-sync.json'
 
@@ -29,7 +31,9 @@ interface PersistShape {
   migrationPending?: boolean
   /** 历史上见过的 source 数高水位。见 `knownSourceCount` 字段注释。 */
   knownSourceCount?: number
-  /** 用户是否已亲自确认过同步目的地。见 `destinationConfirmed` 字段注释。 */
+  /** 初始化是否完成。见 `inited` 字段注释。 */
+  inited?: boolean
+  /** @deprecated `inited` 的旧字段名，仅为读取老 data.json 保留。 */
   destinationConfirmed?: boolean
 }
 
@@ -70,12 +74,16 @@ export default class AcornySyncPlugin extends Plugin {
    */
   private knownSourceCount = 0
   /**
-   * 用户是否已亲自点过一次同步、从而确认了目的地（笔记本 + 文件夹）。
-   * 在此之前，启动同步 / 定时同步 / 保存后同步一律不跑——笔记本和文件夹都有默认值，
-   * 不设这道门槛的话「填个 token 点保存」就会用一套从没确认过的目的地往用户笔记里写。
-   * **升级用户同样需要确认一次**：这是一次性的、有明确提示的操作，方向上偏安全。
+   * 初始化是否完成——用户亲自跑过一次同步即视为完成。装完插件默认 `false`。
+   *
+   * 它和 `settings.syncOnStartup` 是**两件事**：后者是用户偏好（"我想不想开机同步"，默认
+   * `true`），前者是客观事实（"初始化完没完"）。只有初始化完成后 `syncOnStartup` 才谈得上
+   * 生效——否则笔记本与文件夹都有默认值，「填个 token 点保存」就会用一套从没确认过的
+   * 目的地往用户笔记里写。
+   *
+   * 一旦置位便不再复位：改笔记本/文件夹**不会**重新上锁（产品决定），此后自动同步照常。
    */
-  private destinationConfirmed = false
+  private inited = false
 
   async onload(): Promise<void> {
     // 先「同步」注册 UI：siyuan 的 onload 是同步 void 生命周期，宿主不保证 await 完成；
@@ -139,7 +147,7 @@ export default class AcornySyncPlugin extends Plugin {
     if (this.disposed || !this.ready) return
     const manual = isInteractiveTrigger(trigger)
     // 首次写入必须由用户显式发起。默认目的地（列表第一个笔记本 + /Acorny）不该被自动采用。
-    if (!mayRunSync(trigger, this.destinationConfirmed)) {
+    if (!mayRunSync(trigger, this.inited)) {
       if (trigger === 'settings') showMessage(this.i18n.confirmDestinationFirst, 15000)
       return
     }
@@ -149,8 +157,8 @@ export default class AcornySyncPlugin extends Plugin {
     if (this.syncing) return
     if (!this.settings.exportToken) { showMessage(this.i18n.setTokenFirst); return }
     if (!this.settings.notebookId) { showMessage(this.i18n.selectNotebookFirst); return }
-    // 走到这里说明用户手动发起、且 token/笔记本都已就绪——目的地就此确认，之后自动同步放行。
-    if (trigger === 'manual') this.destinationConfirmed = true
+    // 走到这里说明用户手动发起、且 token/笔记本都已就绪——初始化就此完成，之后自动同步放行。
+    if (trigger === 'manual') this.inited = true
     this.syncing = true
     this.setSyncingIndicator(true)
     // 手动触发给即时反馈（自动同步静默，只靠顶栏旋转，避免定时 toast 打扰）。
@@ -394,10 +402,10 @@ export default class AcornySyncPlugin extends Plugin {
     })
 
     // 首次同步入口。顶栏那个刷新图标新用户根本发现不了，而"手动跑一次"又是启用自动同步的
-    // 前提条件（见 destinationConfirmed），所以必须在配置现场给一个显眼的行动点。
+    // 前提条件（见 inited），所以必须在配置现场给一个显眼的行动点。
     this.setting.addItem({
       title: this.i18n.settingSyncNow,
-      description: this.destinationConfirmed
+      description: this.inited
         ? this.i18n.settingSyncNowDescConfirmed
         : this.i18n.settingSyncNowDescUnconfirmed,
       direction: 'column',
@@ -439,7 +447,7 @@ export default class AcornySyncPlugin extends Plugin {
     this.migrationPending = data.migrationPending ?? false
     // 高水位至少不低于已持久化的映射条目数（兼容此前没存该字段的 data.json）。
     this.knownSourceCount = Math.max(data.knownSourceCount ?? 0, Object.keys(this.sourceDocMap).length)
-    this.destinationConfirmed = data.destinationConfirmed ?? false
+    this.inited = readInitedFlag(data)
   }
 
   private async persist(): Promise<void> {
@@ -449,7 +457,7 @@ export default class AcornySyncPlugin extends Plugin {
       knownFolders: this.knownFolders,
       migrationPending: this.migrationPending,
       knownSourceCount: this.knownSourceCount,
-      destinationConfirmed: this.destinationConfirmed,
+      inited: this.inited,
     }
     await this.saveData(STORAGE, payload)
   }

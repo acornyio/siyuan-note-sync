@@ -8,11 +8,27 @@ export type SyncTrigger = 'manual' | 'startup' | 'timer' | 'settings'
  *
  * 目标笔记本、文件夹都有默认值（笔记本下拉曾默认选中列表第一个，文件夹默认 `/Acorny`），
  * 于是「填个 token 点保存」就足以让插件用一套用户从没确认过的目的地往笔记里写。
- * 因此：**首次写入必须由用户显式发起**——手动同步永远放行，并以此确认目的地；
+ * 因此：**首次写入必须由用户显式发起**——手动同步永远放行，并以此完成初始化；
  * 在那之前，启动同步 / 定时同步 / 保存后同步一律不跑。
+ *
+ * `inited` 与 `syncOnStartup` 是**两件事，不能合并成一个开关**：
+ *  - `syncOnStartup` 是用户偏好「我想不想开机就同步」，装完默认 `true`；
+ *  - `inited` 是客观事实「初始化完没完」，装完默认 `false`。
+ * 只有初始化完成后，`syncOnStartup` 才谈得上生效。
  */
-export function mayRunSync(trigger: SyncTrigger, destinationConfirmed: boolean): boolean {
-  return trigger === 'manual' || destinationConfirmed
+export function mayRunSync(trigger: SyncTrigger, inited: boolean): boolean {
+  return trigger === 'manual' || inited
+}
+
+/**
+ * 从持久化数据里读「初始化是否完成」。
+ * 兼容旧字段名 `destinationConfirmed`——否则升级后读不到，已经在正常同步的老用户会被
+ * 重新上锁、自动同步静默停摆。
+ */
+export function readInitedFlag(
+  data: { inited?: boolean; destinationConfirmed?: boolean } | null | undefined,
+): boolean {
+  return data?.inited ?? data?.destinationConfirmed ?? false
 }
 
 /** 用户此刻是否在看着结果——决定要不要弹提示（定时/启动同步保持安静，避免打扰）。 */
