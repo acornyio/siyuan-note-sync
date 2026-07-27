@@ -4,7 +4,7 @@ import { fetchFeedPage } from './apiClient'
 import { createForwardProxyHttp } from './httpProxy'
 import { createSiyuanClient, type Notebook } from './siyuanClient'
 import { createSiyuanGateway, type SiyuanGateway } from './siyuanGateway'
-import { migrateDocsToFolder, planDestinationChange } from './folderMigration'
+import { migrateDocsToFolder, planDestinationChange, rememberFolders } from './folderMigration'
 import { normalizeFolderPath } from './docPath'
 import { SyncEngine } from './syncEngine'
 import { nextAutoDelayMs } from './scheduler'
@@ -27,6 +27,8 @@ interface PersistShape {
   knownFolders?: string[]
   /** 目标位置已变更、但迁移还没跑完。持久化以便中途退出思源后下次同步补做。 */
   migrationPending?: boolean
+  /** 历史上见过的 source 数高水位。见 `knownSourceCount` 字段注释。 */
+  knownSourceCount?: number
 }
 
 export default class AcornySyncPlugin extends Plugin {
@@ -50,7 +52,7 @@ export default class AcornySyncPlugin extends Plugin {
    *  2. 重启后不必单靠一次 SQL 全表扫来重建索引（那条查询曾被内核静默截断到 64 行，
    *     直接导致 6850 篇重复文档）；
    *  3. 给熔断提供 baseline——"上次我知道有多少个 source"。
-   * 它不是唯一真相：每次使用都经 getBlockAttrs 无延迟校验，指向已删/已改的条目会被丢弃。
+   * 它不是唯一真相：每次使用都经 getBlockKramdown 零延迟校验，指向已删/已改的条目会被丢弃。
    */
   private sourceDocMap: Record<string, string> = {}
   /**
@@ -60,6 +62,11 @@ export default class AcornySyncPlugin extends Plugin {
   private knownFolders: string[] = []
   /** 目标位置刚变更，下一次同步开始前要先把已有文档搬过去。 */
   private migrationPending = false
+  /**
+   * 历史上见过的 source 数（只增不减）。唯一作用是让熔断能区分「真·首次同步」（全量新建正常）
+   * 与「索引因故全空」（最需要熔断的时刻）——只看当前 docMap 大小分不出这两种情况。
+   */
+  private knownSourceCount = 0
 
   async onload(): Promise<void> {
     // 先「同步」注册 UI：siyuan 的 onload 是同步 void 生命周期，宿主不保证 await 完成；
@@ -141,6 +148,7 @@ export default class AcornySyncPlugin extends Plugin {
       // 跨同步存活的 source→doc 映射：快速连点时，第二次靠它命中上次刚建的文档，
       // 不受 attributes SQL 1–2s 异步索引延迟影响 → 不重复建文档。
       docMap: this.sourceDocMap,
+      knownSourceCount: this.knownSourceCount,
       // 卸载后停止 writeSource 内的后续块写入。
       isAborted: () => this.disposed,
     })
@@ -169,6 +177,8 @@ export default class AcornySyncPlugin extends Plugin {
       this.syncing = false
       this.setSyncingIndicator(false)
       this.activeGateway = null
+      // 抬高水位后再落盘：下次即便 docMap 为空，熔断也知道「我们以前是有东西的」。
+      this.knownSourceCount = Math.max(this.knownSourceCount, Object.keys(this.sourceDocMap).length)
       // 无条件落盘本次学到的 source→doc 映射——中止、异常、卸载路径同样要落。
       // 已经建出来的文档如果没被记住，下次同步就会认为它们不存在并再建一遍：
       // 这正是本次事故 6850 篇重复文档的放大路径。
@@ -176,11 +186,9 @@ export default class AcornySyncPlugin extends Plugin {
     }
   }
 
-  /** 记住一个用过的文件夹（去重、且不记当前文件夹）。 */
+  /** 记住一个用过的文件夹（去重、不记当前文件夹、有上限）。策略见 rememberFolders。 */
   private rememberFolder(folder: string): void {
-    const norm = normalizeFolderPath(folder)
-    if (norm === normalizeFolderPath(this.settings.docFolderPath)) return
-    if (!this.knownFolders.includes(norm)) this.knownFolders.push(norm)
+    this.knownFolders = rememberFolders(this.knownFolders, folder, this.settings.docFolderPath)
   }
 
   /**
@@ -189,17 +197,23 @@ export default class AcornySyncPlugin extends Plugin {
    */
   private async migrateToCurrentFolder(notebookId: string, targetFolder: string): Promise<void> {
     try {
+      // **先补 SQL 种子再迁移。** 迁移只能搬它看得见的文档，而此刻 docMap 里只有持久化的那部分；
+      // data.json 丢失/不全时（例如从数据历史恢复之后），仅靠 SQL 才能发现的文档会被漏搬，
+      // 留在旧文件夹里。loadSyncedIndex 就地把种子补进同一个 docMap 对象。
+      await this.requireGateway().loadSyncedIndex()
       const res = await migrateDocsToFolder(this.client, {
         notebookId,
         targetFolder,
         docIds: [...new Set(Object.values(this.sourceDocMap))],
       })
       this.migrationPending = false
-      // 全部搬完才能忘掉旧文件夹；有跳过的（已删/非 Acorny）不影响，它们本就不该被找。
-      this.knownFolders = []
+      // 注意：**不清空 knownFolders**。迁移仍可能漏搬（种子也看不到的文档、跳过的、失败的），
+      // 清空会让 L3a 不再查旧文件夹，只剩滞后 1–2s 的 L3b，重新打开重复建档窗口。
+      // 保留的代价只是每个未命中 source 几次零延迟查找。
       if (res.moved > 0) showMessage(this.i18n.movedDocs.replace('${count}', String(res.moved)))
     } catch (error) {
-      // 保持 migrationPending=true，下次同步再试。
+      // 保持 migrationPending=true，下次同步再试。迁移失败不该让整轮同步失败：
+      // 旧文件夹还在 knownFolders 里，L3a 照样找得到那些文档，不会重复建档，最多是位置没变。
       console.error('[Acorny] Folder migration failed, will retry next sync:', error)
     }
   }
@@ -324,6 +338,8 @@ export default class AcornySyncPlugin extends Plugin {
     Object.assign(this.sourceDocMap, data.sourceDocMap ?? {})
     this.knownFolders = (data.knownFolders ?? []).map(normalizeFolderPath)
     this.migrationPending = data.migrationPending ?? false
+    // 高水位至少不低于已持久化的映射条目数（兼容此前没存该字段的 data.json）。
+    this.knownSourceCount = Math.max(data.knownSourceCount ?? 0, Object.keys(this.sourceDocMap).length)
   }
 
   private async persist(): Promise<void> {
@@ -332,6 +348,7 @@ export default class AcornySyncPlugin extends Plugin {
       sourceDocMap: this.sourceDocMap,
       knownFolders: this.knownFolders,
       migrationPending: this.migrationPending,
+      knownSourceCount: this.knownSourceCount,
     }
     await this.saveData(STORAGE, payload)
   }

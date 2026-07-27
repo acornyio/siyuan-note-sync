@@ -37,6 +37,7 @@ function fakeClient(opts: { attributesIndexed?: boolean } = {}) {
     async setBlockAttrs(id, attrs) { const d = docs.get(id); if (d) Object.assign(d.attrs, attrs) },
     async getHPathByID(id) { return docs.get(id)?.path ?? '' },
     async getDocNotebookId(id) { return docs.has(id) ? 'nb' : '' },
+    async removeDocByID(id) { docs.delete(id) },
     async moveDocsByID(fromIDs, toID) {
       const target = docs.get(toID)!.path
       for (const id of fromIDs) { const d = docs.get(id)!; d.path = `${target}/${d.path.split('/').pop()}` }
@@ -357,6 +358,61 @@ describe('siyuanGateway 重复文档熔断', () => {
     const res = await gw(client, map).writeSource(s1, [hl('h1'), hl('h2')], empty(map))
     expect(res.docId).not.toBe(first.docId)
     expect(f.docs.get(res.docId)!.hlIds).toEqual(['h1', 'h2']) // 两条都补齐
+  })
+
+  it('still applies the budget when the index is empty but we have synced before (index suspect, not first run)', async () => {
+    // baseline===0 曾无条件关掉熔断，于是分不清「首次同步」和「索引因故全空」——
+    // 恰恰在最需要兜底时兜底失效。持久化的历史 source 数是区分二者的唯一信号。
+    const f = fakeClient()
+    const g = createSiyuanGateway(f.client, {
+      notebookId: 'nb', docFolderPath: '/Acorny', docMap: {}, knownSourceCount: 400,
+    })
+    const index = await g.loadSyncedIndex() // 空库：种子查不到任何东西
+    const write = async (i: number) => {
+      const s: ExportFeedSource = { id: `new-${i}`, title: `New ${i}`, author: null, canonicalUrl: '', type: 'article' }
+      await g.writeSource(s, [hl('h1', s)], index)
+    }
+    for (let i = 0; i < MIN_NEW_DOCS_PER_SYNC; i++) await write(i)
+    await expect(write(MIN_NEW_DOCS_PER_SYNC)).rejects.toBeInstanceOf(SyncIndexError)
+  })
+
+  it('rolls back the freshly created doc when anchoring it fails (no unanchored orphans)', async () => {
+    // 建档 → 记 docMap → setBlockAttrs 三步不原子。锚定失败若不回滚，会留下一篇没有
+    // custom-acorny-source-id 的文档：下个会话 L3a 按路径找到它、readDocOf 因无锚定拒绝采用
+    // → 再建一篇，孤儿永久堆积。
+    const f = fakeClient()
+    const client: SiyuanClient = {
+      ...f.client,
+      async setBlockAttrs() { throw new Error('kernel busy') },
+    }
+    const map: Record<string, string> = {}
+    await expect(gw(client, map).writeSource(s1, [hl('h1')], empty(map))).rejects.toThrow('kernel busy')
+    expect(map).toEqual({}) // docMap 不留悬空条目
+    expect(f.docs.size).toBe(0) // 刚建的文档已被删除，没有无锚定孤儿
+  })
+
+  it('scans enough point-lookup candidates to survive a source with many historical duplicates', async () => {
+    // 事故里单个 source 曾有 88 篇重复文档。若点查上限太小、返回的前几行又都是已删的滞后行，
+    // 就会漏掉那篇还活着的 → 再建一篇。
+    const f = fakeClient()
+    const alive = await f.client.createDocWithMd('nb', '/Acorny/Deep Work', '')
+    await f.client.setBlockAttrs(alive, { 'custom-acorny-source-id': 's1' })
+    const ghosts = Array.from({ length: 80 }, (_, i) => ({ block_id: `dead-${i}`, value: 's1' }))
+    const client: SiyuanClient = {
+      ...f.client,
+      // 点查返回 80 条已删的滞后行在前、活着的那条在最后
+      async querySql<T>(stmt: string) {
+        if (!stmt.includes('value =')) return [] as unknown as T[]
+        const lim = Number(/LIMIT (\d+)/.exec(stmt)![1])
+        return [...ghosts, { block_id: alive, value: 's1' }].slice(0, lim) as unknown as T[]
+      },
+    }
+    f.created.length = 0
+    const res = await createSiyuanGateway(client, {
+      notebookId: 'nb', docFolderPath: '/Other', docMap: {}, // 换个文件夹让 L3a 查不到，逼它走点查
+    }).writeSource(s1, [hl('h1')], empty())
+    expect(res.docId).toBe(alive)
+    expect(f.created).toEqual([])
   })
 
   it('does not apply the budget on a first-ever sync (empty index → everything is legitimately new)', async () => {

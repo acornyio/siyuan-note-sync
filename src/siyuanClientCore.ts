@@ -36,6 +36,11 @@ export interface SiyuanClient {
    * **文档 id 不变**（真机实测），故 docMap / 锚定属性 / 已同步高亮全部保持有效。
    */
   moveDocsByID(fromIDs: string[], toID: string): Promise<void>
+  /**
+   * 删除文档。**仅用于回滚本插件刚建出来、尚未写入任何内容的空文档**（锚定失败时），
+   * 绝不可用于用户已有内容的文档。
+   */
+  removeDocByID(blockId: string): Promise<void>
   /** 追加块（markdown 可含内联 IAL），返回新块 id。 */
   appendBlock(parentId: string, markdown: string): Promise<string>
   setBlockAttrs(blockId: string, attrs: Record<string, string>): Promise<void>

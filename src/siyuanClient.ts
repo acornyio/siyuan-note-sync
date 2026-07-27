@@ -38,6 +38,9 @@ export function createSiyuanClient(): SiyuanClient {
     async moveDocsByID(fromIDs, toID) {
       await post<unknown>('/api/filetree/moveDocsByID', { fromIDs, toID })
     },
+    async removeDocByID(id) {
+      await post<unknown>('/api/filetree/removeDocByID', { id })
+    },
     async appendBlock(parentID, data) {
       const opData = await post<unknown>('/api/block/appendBlock', { parentID, dataType: 'markdown', data })
       return extractAppendedBlockId(opData)

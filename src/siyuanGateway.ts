@@ -19,8 +19,12 @@ const SOURCE_ATTR = 'custom-acorny-source-id'
  */
 export const SEED_ROW_LIMIT = 100_000
 
-/** 同一 source 的候选文档点查上限（正常为 1；>1 说明历史上已产生重复，取第一个校验通过的）。 */
-const POINT_LOOKUP_LIMIT = 8
+/**
+ * 同一 source 的候选文档点查上限。正常为 1；>1 说明历史上已产生重复。
+ * 取值要能覆盖真实重复规模——事故里单个 source 曾有 88 篇文档，而删除后 attributes 表还会
+ * 返回滞后行约 3s，上限太小会让「前若干条都是已删的幽灵行」把活着的那篇挤出候选，进而重复建档。
+ */
+const POINT_LOOKUP_LIMIT = 128
 
 /**
  * 单次同步允许新建的文档数下限。实际预算 = max(本数, 同步开始时的已知 source 数)，
@@ -59,6 +63,11 @@ export function createSiyuanGateway(
     knownFolders?: string[]
     /** 跨同步存活的内存 source→doc 映射（就地 mutate）。见 §去重设计。 */
     docMap: Record<string, string>
+    /**
+     * 历史上见过的 source 数（持久化的高水位）。用来区分「真·首次同步」与「索引因故全空」：
+     * 前者全量新建正常、不该熔断；后者恰恰是最需要熔断的时刻。只看当前 baseline 分不出来。
+     */
+    knownSourceCount?: number
     isAborted?: () => boolean
   },
 ): SiyuanGateway {
@@ -144,12 +153,15 @@ export function createSiyuanGateway(
    * 索引失效的signature（种子被截断 → 条目凭空消失 → 重复建档）。
    *
    * 刻意不计费的两类新建，因为它们都有正面证据、不是索引可疑：
-   *  - docMap 有条目但 getBlockAttrs 实时核实文档已删 → 用户主动删除，重建合法
+   *  - docMap 有条目但实时核实文档已删 → 用户主动删除，重建合法
    *    （否则"清空整个文件夹后重新同步"必然超预算，被误伤）；
-   *  - baseline 为 0 的首次同步 → 全量新建本就正常。
+   *  - **真·首次同步** → 全量新建本就正常。
+   *
+   * 注意「真·首次同步」不能只看 `baseline === 0`：索引因故全空时 baseline 同样是 0，
+   * 而那恰恰是最需要熔断的时刻。用持久化的历史 source 数（knownSourceCount）区分二者。
    */
   function chargeUnknownSourceCreate(): void {
-    if (baseline === 0) return // 首次同步：全量新建是正常的
+    if (baseline === 0 && (opts.knownSourceCount ?? 0) === 0) return // 从没同步过，全量新建正常
     const budget = Math.max(MIN_NEW_DOCS_PER_SYNC, baseline)
     if (createdThisRun >= budget) {
       throw new SyncIndexError(
@@ -194,9 +206,19 @@ export function createSiyuanGateway(
     if (!knownToIndex) chargeUnknownSourceCreate()
     const hpath = buildDocHPath(opts.docFolderPath, source.title)
     const docId = await client.createDocWithMd(opts.notebookId, hpath, '')
-    // 先记 docMap 再写锚定属性：即便 setBlockAttrs 失败，同会话内也不会对该 source 重复建文档。
     index.sourceDocMap[source.id] = docId
-    await client.setBlockAttrs(docId, { [SOURCE_ATTR]: source.id })
+    try {
+      await client.setBlockAttrs(docId, { [SOURCE_ATTR]: source.id })
+    } catch (error) {
+      // 建档与锚定不是一个事务。锚定失败必须回滚刚建的空文档，否则会留下一篇**无锚定**的
+      // 文档：下个会话 L3a 按路径找到它、readDocOf 因锚定不符拒绝采用 → 再建一篇，孤儿永久堆积。
+      // 此刻文档必然是空的（还没 append 过），删除不会丢内容。
+      delete index.sourceDocMap[source.id]
+      await client.removeDocByID(docId).catch((e: unknown) => {
+        console.error('[Acorny] Failed to roll back an unanchored doc:', docId, e)
+      })
+      throw error
+    }
     return { docId, present: new Set<string>() } // 新文档必然没有已同步高亮
   }
 

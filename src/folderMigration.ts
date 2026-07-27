@@ -40,6 +40,27 @@ export function planDestinationChange(prev: SyncDestination, next: SyncDestinati
   }
 }
 
+/**
+ * 历史文件夹保留上限。它们只在 L3a 零延迟查找里被逐个试，成本是每个未命中 source 一次
+ * `getIDsByHPath`；无上限的话反复改文件夹会线性拖慢同步。
+ */
+export const MAX_KNOWN_FOLDERS = 5
+
+/**
+ * 把刚被替换掉的旧文件夹记进历史。
+ *
+ * **刻意不在迁移成功后清空**：迁移只能搬到它看得见的文档（docMap 里的），SQL 才能发现的
+ * 那些搬不走；清空历史会让 L3a 连旧文件夹也不再查，只剩滞后 1–2s 的 L3b，重新打开重复
+ * 建档窗口。保留历史的代价只是几次零延迟查找，远小于重复建档。
+ */
+export function rememberFolders(existing: string[], oldFolder: string, currentFolder: string): string[] {
+  const old = normalizeFolderPath(oldFolder)
+  if (old === normalizeFolderPath(currentFolder)) return existing // 当前文件夹不算历史
+  const next = existing.filter((f) => f !== old)
+  next.push(old)
+  return next.slice(-MAX_KNOWN_FOLDERS)
+}
+
 export interface MigrationResult {
   moved: number
   /** 已删除、非 Acorny 文档、或已在目标文件夹里而未移动的数量。 */

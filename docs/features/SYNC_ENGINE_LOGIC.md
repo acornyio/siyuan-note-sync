@@ -429,7 +429,23 @@ getBlockKramdown(新文档) → 空 → present 为空集
 
 **熔断的计费口径为什么是「索引查不到」而不是「所有新建」:** 最初按所有新建计费，导致「用户清空整个 Acorny 文件夹后重新同步」被误判为异常——重建量必然 ≥ 原基线。而这类新建有正面证据（docMap 有条目 + `getBlockAttrs` 实时核实文档确已删除），属合法重建。真正的失效 signature 是「索引条目凭空消失」，只该对它计费。
 
-新增 23 个测试（50 → 73），全部通过；lint / typecheck / build 全绿。
+新增 47 个测试（50 → 97），全部通过；lint / typecheck / build 全绿。
+
+### 独立 review 发现的追加缺陷（2026-07-27）
+
+Codex 两轮 review 都因自身原因中途挂死，但各自在挂之前给出了有效发现。以下 5 条经逐条对
+代码核实后全部成立并已修复——它们**都是我自查时漏掉的**，独立 review 这道门槛是有效的。
+
+| 编号 | 缺陷 | 修法 |
+|---|---|---|
+| **F-1** | 只换笔记本（文件夹不变）时 `migrationPending` 不置位 → 触发同步却不迁移。而 docMap 按 block id 校验、与笔记本无关，新高亮继续写进旧笔记本，**换笔记本形同无效** | 目标位置判定抽成纯函数 `planDestinationChange`（原先内联在无法单测的 `index.ts` 里，正是这条分支漏测的原因） |
+| **F-2** | 即便置位也搬不动：`getHPathByID` 返回**笔记本内**相对路径，旧笔记本的 `/Acorny` 与目标笔记本的 `/Acorny` 前缀相同 → 被判成「已在目标文件夹里」而跳过 | 迁移判定同时比对笔记本（新增 `getDocNotebookId`，取 `getBlockInfo.box`） |
+| **F-3** | 迁移跑在 `engine.sync()` **之前**，而 SQL 种子是在 `sync()` 内部才补进 docMap。迁移只能搬到持久化的那部分；`data.json` 丢失/不全时（例如从数据历史恢复后），仅靠 SQL 才能发现的文档会被漏搬。更糟的是迁移「成功」后无条件清空 `knownFolders`，L3a 连旧文件夹也不再查，只剩滞后 1–2s 的 L3b → **重新打开重复建档窗口** | 迁移前先跑一次 `loadSyncedIndex()` 补种子；`knownFolders` **不再自动清空**，改为保留最近 `MAX_KNOWN_FOLDERS` 个 |
+| **F-4** | 熔断 `baseline === 0` 时无条件放行，分不清「真·首次同步」与「索引因故全空」——恰恰在最需要兜底时兜底失效 | 引入持久化高水位 `knownSourceCount`：从没同步过才免熔断，否则即使 baseline 为 0 也按 `MIN_NEW_DOCS_PER_SYNC` 兜底 |
+| **F-5** | `createDocWithMd` → 记 docMap → `setBlockAttrs` 三步不原子。锚定失败会留下**无锚定**文档：下个会话 L3a 按路径找到它、`readDocOf` 因锚定不符拒绝采用 → 再建一篇，孤儿永久堆积 | 锚定失败时回滚刚建的空文档（此刻必然无内容，删除不丢数据）并抛错 |
+
+另将点查上限 `POINT_LOOKUP_LIMIT` 从 8 提到 128：事故里单个 source 曾有 88 篇重复文档，
+而删除后 `attributes` 表还会返回滞后行约 3s，上限太小会让幽灵行把活着的那篇挤出候选。
 
 ### 真实内核端到端验证
 

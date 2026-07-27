@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { migrateDocsToFolder, planDestinationChange } from './folderMigration'
+import { MAX_KNOWN_FOLDERS, migrateDocsToFolder, planDestinationChange, rememberFolders } from './folderMigration'
 import type { SiyuanClient } from './siyuanClientCore'
 
 const NB = 'nb'
@@ -137,6 +137,29 @@ describe('migrateDocsToFolder', () => {
     await run(f, ids)
     expect(f.moves).toHaveLength(1)
     expect(f.moves[0].fromIDs).toEqual(ids)
+  })
+})
+
+describe('rememberFolders', () => {
+  it('keeps the old folder so the lag-free lookup can still reach un-migrated docs', () => {
+    expect(rememberFolders([], '/Acorny', '/Acorny2')).toEqual(['/Acorny'])
+  })
+
+  it('never records the current folder, and never duplicates', () => {
+    expect(rememberFolders(['/Acorny'], '/Acorny', '/Acorny2')).toEqual(['/Acorny'])
+    expect(rememberFolders(['/A'], '/Acorny2', '/Acorny2')).toEqual(['/A'])
+  })
+
+  it('normalizes spellings so /Acorny, Acorny and /Acorny/ are one entry', () => {
+    expect(rememberFolders(['/Acorny'], 'Acorny/', '/New')).toEqual(['/Acorny'])
+  })
+
+  it('caps history so repeated folder changes cannot grow the lookup cost without bound', () => {
+    let history: string[] = []
+    for (let i = 0; i < 12; i++) history = rememberFolders(history, `/F${i}`, '/Current')
+    expect(history).toHaveLength(MAX_KNOWN_FOLDERS)
+    expect(history).toContain('/F11') // 最近的留着
+    expect(history).not.toContain('/F0') // 最老的淘汰
   })
 })
 
