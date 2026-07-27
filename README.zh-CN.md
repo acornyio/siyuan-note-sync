@@ -8,8 +8,8 @@
 
 ## 功能
 
-- **单向增量同步**：通过游标分页拉取 Acorny 高亮 feed。
-- **思源原生去重**：用块自定义属性（文档根块 `custom-acorny-source-id`、高亮块 `custom-acorny-id`）+ SQL 查询，替代脆弱的文本标记。移动或重命名文档都不影响匹配。
+- **单向对账同步**：每次同步都读取完整的 Acorny 高亮 feed,让思源与之对齐——新高亮会新增,你在思源里删掉的会被重建。
+- **思源原生去重**：用块自定义属性（文档根块 `custom-acorny-source-id`、高亮块 `custom-acorny-id`）+ SQL 查询,替代脆弱的文本标记。移动或重命名文档都不影响匹配,已同步的高亮会被跳过（不重复）。
 - **编辑保护**：已同步的高亮块永不改动、不重复追加。
 - **原子写入**：高亮块与其去重属性通过一次 `appendBlock`（内联 IAL）落地，同步中断也不会留下无属性的孤块。
 - **触发方式**：顶栏图标、命令面板、启动时、可选定时轮询。
@@ -38,8 +38,8 @@
 
 ## v1 限制
 
-- **仅追加**：Acorny 端改了 note/quote 不会回写到已同步块。
-- **不追踪单块删除**：删个别已同步块后，因增量游标不回头，下次增量同步**不会**重新追加(除非该高亮在 Acorny 侧更新)。**但整库清空会自愈**：若本地有游标却查不到任何 `custom-acorny-id`(文档全删)，同步会自动弃用游标重建。想找回**部分**删除的块，用命令**「重新完整同步」**强制全量。
+- **编辑仅追加**：Acorny 端改了 note/quote 不会回写到已同步块。(但你在思源里的删除会在下次同步时重建——见「功能」。)
+- **全量 feed 对账**:每次同步读取完整 feed,而非从游标续拉。这正是删除能自愈的原因,代价是每次都重读整个 feed;对个人高亮库很廉价(去重会跳过已存在的块)。
 - **单实例串行幂等**：去重在单个运行实例内成立；两个窗口/设备**同时**同步不保证不产生重复（块属性无唯一约束）。
 - 发布模式下插件被禁用（`disabledInPublish: true`），因为依赖 `query/sql`。
 
@@ -61,4 +61,4 @@ pnpm lint:check     # eslint，不自动修复
 pnpm build          # 生产构建 + package.zip
 ```
 
-架构：纯逻辑（`types`/`connection`/`apiClient`/`docPath`/`renderer`/`scheduler`/`syncEngine`）不依赖 siyuan、可单测；思源耦合集中在 `siyuanClient`/`httpProxy`/`siyuanGateway`/`index`。
+架构：纯逻辑（`types`/`apiClient`/`docPath`/`renderer`/`scheduler`/`syncEngine`）不依赖 siyuan、可单测；思源耦合集中在 `siyuanClient`/`httpProxy`/`siyuanGateway`/`index`。

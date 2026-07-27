@@ -25,12 +25,33 @@ export function createSiyuanClient(): SiyuanClient {
     async createDocWithMd(notebook, path, markdown) {
       return post<string>('/api/filetree/createDocWithMd', { notebook, path, markdown })
     },
+    async getIDsByHPath(notebook, path) {
+      return (await post<string[] | null>('/api/filetree/getIDsByHPath', { notebook, path })) ?? []
+    },
+    async getHPathByID(id) {
+      return (await post<string | null>('/api/filetree/getHPathByID', { id })) ?? ''
+    },
+    async getDocNotebookId(id) {
+      // 块不存在时内核返回 code:-1，post 会抛——迁移中止、下次同步重试，不静默走错分支。
+      return (await post<{ box?: string }>('/api/block/getBlockInfo', { id })).box ?? ''
+    },
+    async moveDocsByID(fromIDs, toID) {
+      await post<unknown>('/api/filetree/moveDocsByID', { fromIDs, toID })
+    },
+    async removeDocByID(id) {
+      await post<unknown>('/api/filetree/removeDocByID', { id })
+    },
     async appendBlock(parentID, data) {
       const opData = await post<unknown>('/api/block/appendBlock', { parentID, dataType: 'markdown', data })
       return extractAppendedBlockId(opData)
     },
     async setBlockAttrs(id, attrs) {
       await post<unknown>('/api/attr/setBlockAttrs', { id, attrs })
+    },
+    async getBlockKramdown(id) {
+      // 已删除/不存在的块返回 code:0 + data.kramdown:""（真机实测），不抛错。
+      const data = await post<{ kramdown?: string }>('/api/block/getBlockKramdown', { id })
+      return data?.kramdown ?? ''
     },
     async querySql<T>(stmt: string) {
       return post<T[]>('/api/query/sql', { stmt })
@@ -40,7 +61,9 @@ export function createSiyuanClient(): SiyuanClient {
         url: req.url,
         method: req.method,
         headers: req.headers,
-        timeout: req.timeout ?? 15000,
+        // 30s 而非 15s：真机在走代理时出现过 TLS 握手都来不及完成就超时。
+        // 上层 retryTransient 还会重试，但先给单次请求足够的握手时间，少走冤枉路。
+        timeout: req.timeout ?? 30000,
         contentType: 'application/json',
       })
     },
