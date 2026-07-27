@@ -1,6 +1,6 @@
 import { Plugin, Setting, showMessage } from 'siyuan'
 import type { AcornySettings } from './types'
-import { fetchFeedPage } from './apiClient'
+import { fetchFeedPage, retryTransient } from './apiClient'
 import { createForwardProxyHttp } from './httpProxy'
 import { createSiyuanClient, type Notebook } from './siyuanClient'
 import { createSiyuanGateway, SyncIndexError, type SiyuanGateway } from './siyuanGateway'
@@ -105,7 +105,12 @@ export default class AcornySyncPlugin extends Plugin {
       getSettings: () => this.settings,
       // 网关在每次同步开始时快照（notebook/folder），见 runSync。
       loadSyncedIndex: () => this.requireGateway().loadSyncedIndex(),
-      fetchPage: ({ serverUrl, token, cursor }) => fetchFeedPage(http, { serverUrl, token, cursor }),
+      // 翻页对瞬时网络故障就地重试：一页失败不该让整轮同步作废并退避 60 秒
+      // （真机见过 forwardProxy 的 TLS handshake timeout）。401/429/4xx 不重试。
+      fetchPage: ({ serverUrl, token, cursor }) => retryTransient(
+        () => fetchFeedPage(http, { serverUrl, token, cursor }),
+        { isAborted: () => this.disposed },
+      ),
       writeSource: (source, highlights, index) => this.requireGateway().writeSource(source, highlights, index),
       // 状态展示由 runSync 直接驱动顶栏旋转，这里无需处理。
       onStatus: () => {},

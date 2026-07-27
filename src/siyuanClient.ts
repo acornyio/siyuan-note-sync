@@ -61,7 +61,9 @@ export function createSiyuanClient(): SiyuanClient {
         url: req.url,
         method: req.method,
         headers: req.headers,
-        timeout: req.timeout ?? 15000,
+        // 30s 而非 15s：真机在走代理时出现过 TLS 握手都来不及完成就超时。
+        // 上层 retryTransient 还会重试，但先给单次请求足够的握手时间，少走冤枉路。
+        timeout: req.timeout ?? 30000,
         contentType: 'application/json',
       })
     },
