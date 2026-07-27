@@ -4,7 +4,9 @@ import { fetchFeedPage } from './apiClient'
 import { createForwardProxyHttp } from './httpProxy'
 import { createSiyuanClient, type Notebook } from './siyuanClient'
 import { createSiyuanGateway, SyncIndexError, type SiyuanGateway } from './siyuanGateway'
-import { migrateDocsToFolder, planDestinationChange, rememberFolders } from './folderMigration'
+import {
+  findDocsOutsideFolder, migrateDocsToFolder, planDestinationChange, rememberFolders,
+} from './folderMigration'
 import { normalizeFolderPath } from './docPath'
 import { SyncEngine } from './syncEngine'
 import {
@@ -27,7 +29,7 @@ interface PersistShape {
   sourceDocMap?: Record<string, string>
   /** 用过的历史文件夹（不含当前）。见 `knownFolders` 字段注释。 */
   knownFolders?: string[]
-  /** 目标位置已变更、但迁移还没跑完。持久化以便中途退出思源后下次同步补做。 */
+  /** @deprecated 迁移已改为每次同步的位置对账，不再需要这个待办标记。 */
   migrationPending?: boolean
   /** 历史上见过的 source 数高水位。见 `knownSourceCount` 字段注释。 */
   knownSourceCount?: number
@@ -66,8 +68,6 @@ export default class AcornySyncPlugin extends Plugin {
    * 迁移尚未跑），L3a 零延迟查找必须连旧文件夹一起找，否则它们不可见 → 重新打开重复建档的窗口。
    */
   private knownFolders: string[] = []
-  /** 目标位置刚变更，下一次同步开始前要先把已有文档搬过去。 */
-  private migrationPending = false
   /**
    * 历史上见过的 source 数（只增不减）。唯一作用是让熔断能区分「真·首次同步」（全量新建正常）
    * 与「索引因故全空」（最需要熔断的时刻）——只看当前 docMap 大小分不出这两种情况。
@@ -178,9 +178,9 @@ export default class AcornySyncPlugin extends Plugin {
       isAborted: () => this.disposed,
     })
     try {
-      // 先把已有文档搬到新目标文件夹，再同步——否则老文档留在旧处继续接收新高亮，
-      // 而重建/新建的落到新文件夹，文档库被劈成两半。
-      if (this.migrationPending) await this.migrateToCurrentFolder(notebookId, docFolderPath)
+      // 每次同步都先做一次位置对账，再同步。事件驱动（只在设置变更时搬一次）会留下
+      // 「设置说 A、文档在 B」的永久不一致：此后每次保存都判定为"没变化"，谁也不去纠正。
+      await this.migrateToCurrentFolder(notebookId, docFolderPath)
       if (this.disposed) return
       const res = await this.engine.sync()
       if (this.disposed) return
@@ -241,22 +241,17 @@ export default class AcornySyncPlugin extends Plugin {
    */
   private async migrateToCurrentFolder(notebookId: string, targetFolder: string): Promise<void> {
     try {
-      // **先补 SQL 种子再迁移。** 迁移只能搬它看得见的文档，而此刻 docMap 里只有持久化的那部分；
-      // data.json 丢失/不全时（例如从数据历史恢复之后），仅靠 SQL 才能发现的文档会被漏搬，
-      // 留在旧文件夹里。loadSyncedIndex 就地把种子补进同一个 docMap 对象。
-      await this.requireGateway().loadSyncedIndex()
-      const res = await migrateDocsToFolder(this.client, {
-        notebookId,
-        targetFolder,
-        docIds: [...new Set(Object.values(this.sourceDocMap))],
-      })
-      this.migrationPending = false
+      // 直接问思源「哪些 acorny 文档不在目标位置」——一次联表查询，且结果正好是要搬的那批。
+      // 不能用 docMap 当来源：它只有本地持久化的部分，data.json 丢失时会漏搬一大片。
+      const strayIds = await findDocsOutsideFolder(this.client, { notebookId, targetFolder })
+      if (strayIds.length === 0) return // 全都在位，零额外请求
+      const res = await migrateDocsToFolder(this.client, { notebookId, targetFolder, docIds: strayIds })
       // 注意：**不清空 knownFolders**。迁移仍可能漏搬（种子也看不到的文档、跳过的、失败的），
       // 清空会让 L3a 不再查旧文件夹，只剩滞后 1–2s 的 L3b，重新打开重复建档窗口。
       // 保留的代价只是每个未命中 source 几次零延迟查找。
       if (res.moved > 0) showMessage(this.i18n.movedDocs.replace('${count}', String(res.moved)))
     } catch (error) {
-      // 保持 migrationPending=true，下次同步再试。迁移失败不该让整轮同步失败：
+      // 迁移失败不该让整轮同步失败；下次同步的位置对账会自动重试：
       // 旧文件夹还在 knownFolders 里，L3a 照样找得到那些文档，不会重复建档，最多是位置没变。
       if (error instanceof SyncIndexError) {
         // 种子不可信 → 迁移无从谈起，但这不是"迁移坏了"，日志必须能区分，否则排查时因果颠倒。
@@ -296,11 +291,8 @@ export default class AcornySyncPlugin extends Plugin {
     const prev = { notebookId: this.settings.notebookId, docFolderPath: this.settings.docFolderPath }
     this.settings = { ...draft }
     const plan = planDestinationChange(prev, this.settings)
-    // 记住旧文件夹：迁移跑完之前（或万一没跑成），L3a 仍要能在那里找到已有文档。
+    // 记住旧文件夹：文档搬过去之前（或万一没搬成），L3a 仍要能在那里找到已有文档。
     if (plan.folderChanged) this.rememberFolder(prev.docFolderPath)
-    // 换笔记本同样要迁移：docMap 里的文档是按 block id 校验的，与笔记本无关，
-    // 不搬的话新高亮会继续写进旧笔记本，换笔记本形同无效。
-    if (plan.needsMigration) this.migrationPending = true
     void this.persist()
     // 保存后立即按新 interval 重排自动同步：0→正数要能启动，正数→0 要能停。
     this.scheduleAuto(this.settings.pollIntervalMinutes > 0 ? this.settings.pollIntervalMinutes * 60_000 : null)
@@ -314,7 +306,7 @@ export default class AcornySyncPlugin extends Plugin {
     this.setting = new Setting({
       confirmCallback: () => {
         // 只有目标位置变了才立刻同步，让新设置马上可见；改 token / 间隔不打扰。
-        // 若此刻正有同步在跑，这次会被单飞门挡掉——migrationPending 已持久化，下一轮补做。
+        // 若此刻正有同步在跑，这次会被单飞门挡掉——下次同步的位置对账会补上迁移。
         if (this.applyDraft(draft).destinationChanged) void this.runSync('settings')
       },
     })
@@ -469,7 +461,6 @@ export default class AcornySyncPlugin extends Plugin {
     // 就地 mutate：网关持有的是同一个对象引用，不能整体替换。
     Object.assign(this.sourceDocMap, data.sourceDocMap ?? {})
     this.knownFolders = (data.knownFolders ?? []).map(normalizeFolderPath)
-    this.migrationPending = data.migrationPending ?? false
     // 高水位至少不低于已持久化的映射条目数（兼容此前没存该字段的 data.json）。
     this.knownSourceCount = Math.max(data.knownSourceCount ?? 0, Object.keys(this.sourceDocMap).length)
     this.inited = readInitedFlag(data)
@@ -480,7 +471,6 @@ export default class AcornySyncPlugin extends Plugin {
       settings: this.settings,
       sourceDocMap: this.sourceDocMap,
       knownFolders: this.knownFolders,
-      migrationPending: this.migrationPending,
       knownSourceCount: this.knownSourceCount,
       inited: this.inited,
     }

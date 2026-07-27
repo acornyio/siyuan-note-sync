@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_KNOWN_FOLDERS, migrateDocsToFolder, planDestinationChange, rememberFolders } from './folderMigration'
+import {
+  findDocsOutsideFolder, LOCATION_SCAN_LIMIT, MAX_KNOWN_FOLDERS, migrateDocsToFolder,
+  planDestinationChange, rememberFolders,
+} from './folderMigration'
+import { SyncIndexError } from './siyuanGateway'
 import type { SiyuanClient } from './siyuanClientCore'
 
 const NB = 'nb'
@@ -140,6 +144,51 @@ describe('migrateDocsToFolder', () => {
   })
 })
 
+describe('findDocsOutsideFolder', () => {
+  /** 建模 blocks ⋈ attributes 的联表查询：返回所有 acorny 文档的 box + hpath。 */
+  const clientWith = (rows: { id: string; box: string; hpath: string }[], limitOverride?: number) => ({
+    async querySql<T>(stmt: string) {
+      const lim = limitOverride ?? Number(/LIMIT (\d+)/.exec(stmt)![1])
+      return rows.slice(0, lim) as unknown as T[]
+    },
+  } as unknown as SiyuanClient)
+
+  const at = (id: string, hpath: string, box = NB) => ({ id, box, hpath })
+
+  it('reports docs sitting in a different folder', async () => {
+    const c = clientWith([at('d1', '/Acorny33/Deep Work'), at('d2', '/Acorny11/Shape Up')])
+    expect(await findDocsOutsideFolder(c, { notebookId: NB, targetFolder: '/Acorny11' })).toEqual(['d1'])
+  })
+
+  it('reports docs sitting in another notebook even when the path matches', async () => {
+    const c = clientWith([at('d1', '/Acorny11/Deep Work', OTHER_NB)])
+    expect(await findDocsOutsideFolder(c, { notebookId: NB, targetFolder: '/Acorny11' })).toEqual(['d1'])
+  })
+
+  it('treats nested paths under the target as already in place', async () => {
+    const c = clientWith([at('d1', '/Acorny11/Books/Deep Work')])
+    expect(await findDocsOutsideFolder(c, { notebookId: NB, targetFolder: '/Acorny11' })).toEqual([])
+  })
+
+  it('is not fooled by a folder that merely shares a prefix', async () => {
+    // /Acorny111 不是 /Acorny11 的子目录。少了分隔符就会把它误判成"已在目标里"。
+    const c = clientWith([at('d1', '/Acorny111/Deep Work')])
+    expect(await findDocsOutsideFolder(c, { notebookId: NB, targetFolder: '/Acorny11' })).toEqual(['d1'])
+  })
+
+  it('normalizes the configured folder spelling', async () => {
+    const c = clientWith([at('d1', '/Acorny11/Deep Work')])
+    expect(await findDocsOutsideFolder(c, { notebookId: NB, targetFolder: 'Acorny11/' })).toEqual([])
+  })
+
+  it('throws instead of silently reporting a partial picture when the query hits its row limit', async () => {
+    // 触顶 = 结果可能不完整。据此去搬文档等于凭残缺信息动用户的文档树，必须中止。
+    const rows = Array.from({ length: LOCATION_SCAN_LIMIT }, (_, i) => at(`d${i}`, '/Elsewhere/x'))
+    await expect(findDocsOutsideFolder(clientWith(rows), { notebookId: NB, targetFolder: '/Acorny11' }))
+      .rejects.toBeInstanceOf(SyncIndexError)
+  })
+})
+
 describe('rememberFolders', () => {
   it('keeps the old folder so the lag-free lookup can still reach un-migrated docs', () => {
     expect(rememberFolders([], '/Acorny', '/Acorny2')).toEqual(['/Acorny'])
@@ -166,34 +215,28 @@ describe('rememberFolders', () => {
 describe('planDestinationChange', () => {
   const at = (notebookId: string, docFolderPath: string) => ({ notebookId, docFolderPath })
 
-  it('flags migration when only the notebook changed (regression: notebook switch was a no-op)', () => {
-    // 曾经只在文件夹变更时置 migrationPending，于是"只换笔记本"会触发同步却不迁移；
-    // docMap 里的旧文档按 block id 校验照样通过，新高亮继续写进旧笔记本，换笔记本形同无效。
+  it('reports a destination change when only the notebook changed', () => {
     const plan = planDestinationChange(at('nb-a', '/Acorny'), at('nb-b', '/Acorny'))
-    expect(plan).toEqual({ destinationChanged: true, folderChanged: false, needsMigration: true })
+    expect(plan).toEqual({ destinationChanged: true, folderChanged: false })
   })
 
-  it('flags migration when only the folder changed', () => {
+  it('reports a folder change', () => {
     expect(planDestinationChange(at('nb-a', '/Acorny'), at('nb-a', '/Acorny2')))
-      .toEqual({ destinationChanged: true, folderChanged: true, needsMigration: true })
+      .toEqual({ destinationChanged: true, folderChanged: true })
   })
 
-  it('flags nothing when the destination is unchanged', () => {
+  it('reports nothing when the destination is unchanged', () => {
     expect(planDestinationChange(at('nb-a', '/Acorny'), at('nb-a', '/Acorny')))
-      .toEqual({ destinationChanged: false, folderChanged: false, needsMigration: false })
+      .toEqual({ destinationChanged: false, folderChanged: false })
   })
 
   it('treats equivalent folder spellings as unchanged (no pointless migration or sync)', () => {
     expect(planDestinationChange(at('nb-a', 'Acorny'), at('nb-a', '/Acorny/')))
-      .toEqual({ destinationChanged: false, folderChanged: false, needsMigration: false })
+      .toEqual({ destinationChanged: false, folderChanged: false })
   })
 
-  it('still migrates when no notebook was configured before (plugin state can be lost while docs remain)', () => {
-    // 曾以「之前没选过笔记本 = 不存在已有文档」为由跳过迁移。反例：用户删掉 data.json
-    // 重装插件，库里 446 篇文档原封不动，prev.notebookId 却是空——于是文档永远留在旧
-    // 文件夹，无论怎么改设置都搬不走。真正没东西可搬的场景由 migrateDocsToFolder 自己
-    // 处理（空列表连目标文件夹都不建），不需要在这里猜。
+  it('reports a destination change even when no notebook was configured before', () => {
     expect(planDestinationChange(at('', '/Acorny'), at('nb-a', '/Acorny2')))
-      .toEqual({ destinationChanged: true, folderChanged: true, needsMigration: true })
+      .toEqual({ destinationChanged: true, folderChanged: true })
   })
 })

@@ -1,5 +1,6 @@
 import { parseDocSourceId, type SiyuanClient } from './siyuanClientCore'
 import { normalizeFolderPath } from './docPath'
+import { SyncIndexError } from './siyuanGateway'
 
 export interface MigrationOptions {
   notebookId: string
@@ -7,6 +8,47 @@ export interface MigrationOptions {
   targetFolder: string
   /** 候选文档 id（通常是 docMap 的全部值）。 */
   docIds: string[]
+}
+
+/** 位置漂移扫描的行上限。与种子查询同一套纪律：显式给上限，触顶即视为结果不完整。 */
+export const LOCATION_SCAN_LIMIT = 100_000
+
+interface DocLocationRow {
+  id: string
+  box: string
+  hpath: string
+}
+
+/**
+ * 找出**不在**配置目标位置的 acorny 文档。
+ *
+ * 迁移必须是**状态驱动**而非事件驱动：只在「设置发生变更」时搬一次，会留下永久对不上的
+ * 状态——用户把文件夹设成 A、文档却在 B，此后再点多少次保存都判定为"没变化"，谁也不会
+ * 去纠正它。改成每次同步扫一遍实际位置，不一致就搬，与同步本身的全量对账保持一致。
+ *
+ * 成本是**一次**联表查询（不是每篇文档一次请求），返回的还正好是需要搬的那批 id，
+ * 比逐篇 getHPathByID + getDocNotebookId 更省。
+ */
+export async function findDocsOutsideFolder(
+  client: SiyuanClient,
+  opts: { notebookId: string; targetFolder: string },
+): Promise<string[]> {
+  const rows = await client.querySql<DocLocationRow>(
+    'SELECT b.id AS id, b.box AS box, b.hpath AS hpath FROM blocks b, attributes a'
+    + " WHERE a.name = 'custom-acorny-source-id' AND a.block_id = b.id"
+    + ` LIMIT ${LOCATION_SCAN_LIMIT}`,
+  )
+  if (rows.length >= LOCATION_SCAN_LIMIT) {
+    throw new SyncIndexError(
+      'seed_truncated',
+      `文档位置扫描触到 ${LOCATION_SCAN_LIMIT} 行上限，结果可能不完整；已中止同步。`,
+    )
+  }
+  // 末尾补 `/` 再比前缀：否则 /Acorny111 会被当成 /Acorny11 的子目录。
+  const prefix = `${normalizeFolderPath(opts.targetFolder)}/`
+  return rows
+    .filter((r) => r.box !== opts.notebookId || !r.hpath.startsWith(prefix))
+    .map((r) => r.id)
 }
 
 /** 同步目标位置（笔记本 + 文件夹）。 */
@@ -19,8 +61,6 @@ export interface DestinationChangePlan {
   /** 目标位置变了 → 值得立刻跑一次同步，让新设置马上可见。 */
   destinationChanged: boolean
   folderChanged: boolean
-  /** 需要把已有文档搬到新位置。 */
-  needsMigration: boolean
 }
 
 /**
@@ -32,15 +72,10 @@ export interface DestinationChangePlan {
 export function planDestinationChange(prev: SyncDestination, next: SyncDestination): DestinationChangePlan {
   const folderChanged = normalizeFolderPath(prev.docFolderPath) !== normalizeFolderPath(next.docFolderPath)
   const notebookChanged = prev.notebookId !== next.notebookId
-  return {
-    destinationChanged: folderChanged || notebookChanged,
-    folderChanged,
-    // 目标位置一变就安排迁移，**不去猜「有没有东西可搬」**。曾按 `prev.notebookId !== ''`
-    // 判定"首次配置就没有已有文档"，反例是：用户删掉 data.json 重装插件，库里文档原封不动，
-    // prev.notebookId 却是空 → 文档永远留在旧文件夹，改多少次设置都搬不走。
-    // 真正没东西可搬时，migrateDocsToFolder 自己是彻底的 no-op（空列表连目标文件夹都不建）。
-    needsMigration: folderChanged || notebookChanged,
-  }
+  // 刻意**不**返回「要不要迁移」：迁移是状态驱动的，由 findDocsOutsideFolder 每次同步实测
+  // 决定。曾经在这里算过一个 needsMigration，结果是设置与实际位置一旦对不上就永久对不上
+  // （再点保存都判定"没变化"）。留着这个字段只会诱使后人再把迁移退回事件驱动。
+  return { destinationChanged: folderChanged || notebookChanged, folderChanged }
 }
 
 /**
