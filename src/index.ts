@@ -8,7 +8,7 @@ import { migrateDocsToFolder, planDestinationChange, rememberFolders } from './f
 import { normalizeFolderPath } from './docPath'
 import { SyncEngine } from './syncEngine'
 import {
-  isInteractiveTrigger, mayRunSync, nextAutoDelayMs, readInitedFlag, type SyncTrigger,
+  isInteractiveTrigger, mayRunSync, nextAutoDelayMs, pickNotebookValue, readInitedFlag, type SyncTrigger,
 } from './scheduler'
 
 const STORAGE = 'acorny-sync.json'
@@ -355,10 +355,10 @@ export default class AcornySyncPlugin extends Plugin {
             opt.textContent = nb.name
             el.append(opt)
           }
-          // <select> 不改动就不触发 change，值不会写进 draft。填充后把「当前显示的值」写回
-          // draft，保证所见即所存：已选过且笔记本仍在 → 显示该项；否则回落到空占位（= 未选）。
+          // <select> 不改动就不触发 change，值不会写进 draft，所以填充后要主动对齐一次。
+          // 但**列表没加载完时绝不能回写**——那会把持久化的笔记本清成空（见 pickNotebookValue）。
+          draft.notebookId = pickNotebookValue(nbs.map((nb) => nb.id), draft.notebookId)
           el.value = draft.notebookId
-          draft.notebookId = el.value
           renderDestination()
         }
         fill(this.notebooks) // 先用已有缓存填（可能为空）
@@ -417,10 +417,24 @@ export default class AcornySyncPlugin extends Plugin {
         button.className = 'b3-button b3-button--outline'
         button.textContent = this.i18n.saveAndSyncNow
         button.addEventListener('click', () => {
-          // 先提交 draft，再以 'manual' 跑——这一步同时把目的地标记为已确认，
+          // 先提交 draft，再以 'manual' 跑——这一步同时完成初始化，
           // 之后启动同步/定时同步才会放行。
           this.applyDraft(draft)
           void this.runSync('manual')
+        })
+        // 重置入口。思源卸载插件**不会**删除 data/storage/petal 下的插件数据，所以
+        // "删掉重装"并不会回到未初始化状态；没有这个按钮，用户只能去手动删文件。
+        const reset = document.createElement('button')
+        reset.className = 'b3-button b3-button--cancel'
+        reset.style.marginInlineStart = '8px'
+        reset.textContent = this.i18n.resetInited
+        reset.disabled = !this.inited
+        reset.addEventListener('click', () => {
+          this.inited = false
+          this.clearAuto() // 立刻停掉已排期的定时同步，不必等下一次重启
+          void this.persist()
+          reset.disabled = true
+          showMessage(this.i18n.resetInitedDone, 15000)
         })
         // 实时显示"文档会写到哪"，未选笔记本时明确提示，避免默认值被静默采用。
         renderDestination = () => {
@@ -432,7 +446,7 @@ export default class AcornySyncPlugin extends Plugin {
             : this.i18n.destinationUnset
         }
         renderDestination()
-        box.append(preview, button)
+        box.append(preview, button, reset)
         return box
       },
     })

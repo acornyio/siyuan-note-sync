@@ -29,5 +29,7 @@
   "settingSyncNowDescConfirmed": "Initial setup is complete — automatic syncing is active. You can still sync on demand here or from the refresh icon in the top-right toolbar.",
   "saveAndSyncNow": "Save and sync now",
   "destinationPreview": "Documents will be written to: ${notebook} → ${folder}",
-  "destinationUnset": "No notebook selected yet — nothing will be written."
+  "destinationUnset": "No notebook selected yet — nothing will be written.",
+  "resetInited": "Reset setup",
+  "resetInitedDone": "Acorny: setup reset. Automatic syncing is off until you press “Save and sync now” again."
 }

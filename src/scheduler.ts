@@ -21,6 +21,20 @@ export function mayRunSync(trigger: SyncTrigger, inited: boolean): boolean {
 }
 
 /**
+ * 决定笔记本下拉「所见即所存」该回写什么值。
+ *
+ * `available` 为空 = **列表还没加载完**（设置面板会先用空缓存渲染一次，再等 `lsNotebooks`
+ * 回来重渲染）。此刻 `<select>` 里只有占位项，任何回写都会把持久化的选择清成空——
+ * 界面显示"未选择"，而用户一点保存就真的丢了配置。所以列表未加载时**原样保留**。
+ *
+ * 列表已加载时才做真正的对齐：选中的笔记本还在就保留，已被删除就清空（与界面一致）。
+ */
+export function pickNotebookValue(available: string[], current: string): string {
+  if (available.length === 0) return current
+  return available.includes(current) ? current : ''
+}
+
+/**
  * 从持久化数据里读「初始化是否完成」。
  * 兼容旧字段名 `destinationConfirmed`——否则升级后读不到，已经在正常同步的老用户会被
  * 重新上锁、自动同步静默停摆。

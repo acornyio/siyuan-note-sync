@@ -29,5 +29,7 @@
   "settingSyncNowDescConfirmed": "初始化已完成，自动同步已启用。你仍可以在这里随时同步，或点右上角工具栏的刷新图标。",
   "saveAndSyncNow": "保存并立即同步",
   "destinationPreview": "文档将写入：${notebook} → ${folder}",
-  "destinationUnset": "尚未选择笔记本 —— 不会写入任何内容。"
+  "destinationUnset": "尚未选择笔记本 —— 不会写入任何内容。",
+  "resetInited": "重置初始化",
+  "resetInitedDone": "Acorny：初始化已重置。在你再次点「保存并立即同步」之前，不会有任何自动同步。"
 }

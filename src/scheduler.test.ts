@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { isInteractiveTrigger, mayRunSync, nextAutoDelayMs, readInitedFlag, type SyncTrigger } from './scheduler'
+import {
+  isInteractiveTrigger, mayRunSync, nextAutoDelayMs, pickNotebookValue, readInitedFlag, type SyncTrigger,
+} from './scheduler'
 
 describe('mayRunSync', () => {
   const AUTO: SyncTrigger[] = ['startup', 'timer', 'settings']
@@ -19,6 +21,27 @@ describe('mayRunSync', () => {
 
   it('allows every trigger once initialization is complete', () => {
     for (const t of AUTO) expect(mayRunSync(t, true)).toBe(true)
+  })
+})
+
+describe('pickNotebookValue', () => {
+  it('keeps the persisted选择 while the notebook list has not loaded yet', () => {
+    // 设置面板会先用空缓存渲染一次，再等 lsNotebooks 回来重渲染。第一次渲染时
+    // <select> 里只有占位项，若此刻按「所见即所存」回写，就会把持久化的笔记本清成空——
+    // 界面显示"未选择"，而用户一点保存就真的丢了配置。
+    expect(pickNotebookValue([], 'nb-1')).toBe('nb-1')
+  })
+
+  it('keeps the selection when it is present in the loaded list', () => {
+    expect(pickNotebookValue(['nb-1', 'nb-2'], 'nb-2')).toBe('nb-2')
+  })
+
+  it('clears a selection whose notebook no longer exists (what is shown is what gets saved)', () => {
+    expect(pickNotebookValue(['nb-1'], 'gone')).toBe('')
+  })
+
+  it('stays empty when nothing was selected — the placeholder must not be replaced by the first notebook', () => {
+    expect(pickNotebookValue(['nb-1', 'nb-2'], '')).toBe('')
   })
 })
 
