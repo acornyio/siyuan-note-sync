@@ -1,5 +1,25 @@
 import type { SyncResult } from './syncEngine'
 
+/** 谁发起了这次同步。决定是否允许自动写入，以及是否给用户即时反馈。 */
+export type SyncTrigger = 'manual' | 'startup' | 'timer' | 'settings'
+
+/**
+ * 是否允许这次同步真的跑起来。
+ *
+ * 目标笔记本、文件夹都有默认值（笔记本下拉曾默认选中列表第一个，文件夹默认 `/Acorny`），
+ * 于是「填个 token 点保存」就足以让插件用一套用户从没确认过的目的地往笔记里写。
+ * 因此：**首次写入必须由用户显式发起**——手动同步永远放行，并以此确认目的地；
+ * 在那之前，启动同步 / 定时同步 / 保存后同步一律不跑。
+ */
+export function mayRunSync(trigger: SyncTrigger, destinationConfirmed: boolean): boolean {
+  return trigger === 'manual' || destinationConfirmed
+}
+
+/** 用户此刻是否在看着结果——决定要不要弹提示（定时/启动同步保持安静，避免打扰）。 */
+export function isInteractiveTrigger(trigger: SyncTrigger): boolean {
+  return trigger === 'manual' || trigger === 'settings'
+}
+
 /**
  * 决定下次「自动」同步的延迟：
  * - auth_failed → null（暂停自动，直到一次手动同步重新启用）

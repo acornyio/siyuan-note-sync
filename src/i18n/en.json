@@ -15,5 +15,7 @@
   "settingPollInterval": "Auto-sync interval (minutes, 0 = off)",
   "save": "Save",
   "movedDocs": "Acorny: moved ${count} document(s) into the new folder.",
-  "unexpectedError": "Acorny: sync failed unexpectedly — see the developer console for details."
+  "unexpectedError": "Acorny: sync failed unexpectedly — see the developer console for details.",
+  "selectNotebookPlaceholder": "— choose a notebook —",
+  "confirmDestinationFirst": "Acorny: settings saved. Check the target notebook and folder, then press “Sync now” once — automatic syncing starts only after you have run it yourself."
 }

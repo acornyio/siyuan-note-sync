@@ -15,5 +15,7 @@
   "settingPollInterval": "自动同步间隔（分钟，0=关闭）",
   "save": "保存",
   "movedDocs": "Acorny：已将 ${count} 篇文档移动到新文件夹。",
-  "unexpectedError": "Acorny：同步遇到预料外的错误，详情见开发者控制台。"
+  "unexpectedError": "Acorny：同步遇到预料外的错误，详情见开发者控制台。",
+  "selectNotebookPlaceholder": "— 请选择笔记本 —",
+  "confirmDestinationFirst": "Acorny：设置已保存。请核对目标笔记本与文件夹，然后手动点一次「立即同步」——自动同步会在你亲自跑过一次之后才启用。"
 }

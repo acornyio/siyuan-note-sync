@@ -7,7 +7,7 @@ import { createSiyuanGateway, SyncIndexError, type SiyuanGateway } from './siyua
 import { migrateDocsToFolder, planDestinationChange, rememberFolders } from './folderMigration'
 import { normalizeFolderPath } from './docPath'
 import { SyncEngine } from './syncEngine'
-import { nextAutoDelayMs } from './scheduler'
+import { isInteractiveTrigger, mayRunSync, nextAutoDelayMs, type SyncTrigger } from './scheduler'
 
 const STORAGE = 'acorny-sync.json'
 
@@ -29,6 +29,8 @@ interface PersistShape {
   migrationPending?: boolean
   /** 历史上见过的 source 数高水位。见 `knownSourceCount` 字段注释。 */
   knownSourceCount?: number
+  /** 用户是否已亲自确认过同步目的地。见 `destinationConfirmed` 字段注释。 */
+  destinationConfirmed?: boolean
 }
 
 export default class AcornySyncPlugin extends Plugin {
@@ -67,6 +69,13 @@ export default class AcornySyncPlugin extends Plugin {
    * 与「索引因故全空」（最需要熔断的时刻）——只看当前 docMap 大小分不出这两种情况。
    */
   private knownSourceCount = 0
+  /**
+   * 用户是否已亲自点过一次同步、从而确认了目的地（笔记本 + 文件夹）。
+   * 在此之前，启动同步 / 定时同步 / 保存后同步一律不跑——笔记本和文件夹都有默认值，
+   * 不设这道门槛的话「填个 token 点保存」就会用一套从没确认过的目的地往用户笔记里写。
+   * **升级用户同样需要确认一次**：这是一次性的、有明确提示的操作，方向上偏安全。
+   */
+  private destinationConfirmed = false
 
   async onload(): Promise<void> {
     // 先「同步」注册 UI：siyuan 的 onload 是同步 void 生命周期，宿主不保证 await 完成；
@@ -75,9 +84,9 @@ export default class AcornySyncPlugin extends Plugin {
       icon: 'iconRefresh',
       title: this.i18n.syncNow,
       position: 'right',
-      callback: () => void this.runSync(true),
+      callback: () => void this.runSync('manual'),
     })
-    this.addCommand({ langKey: 'syncNow', hotkey: '', callback: () => void this.runSync(true) })
+    this.addCommand({ langKey: 'syncNow', hotkey: '', callback: () => void this.runSync('manual') })
 
     await this.loadPersisted()
     // 卸载竞态：插件可能在 loadPersisted 期间已被禁用/卸载，别再继续建 engine/设置面板/启动同步。
@@ -98,7 +107,7 @@ export default class AcornySyncPlugin extends Plugin {
 
     this.buildSettingPanel()
 
-    if (this.settings.syncOnStartup) void this.runSync()
+    if (this.settings.syncOnStartup) void this.runSync('startup')
     this.scheduleAuto(this.settings.pollIntervalMinutes > 0 ? this.settings.pollIntervalMinutes * 60_000 : null)
   }
 
@@ -116,7 +125,7 @@ export default class AcornySyncPlugin extends Plugin {
   private scheduleAuto(delayMs: number | null): void {
     this.clearAuto()
     if (this.disposed || delayMs === null || delayMs <= 0) return
-    this.autoTimer = window.setTimeout(() => { void this.runSync() }, delayMs)
+    this.autoTimer = window.setTimeout(() => { void this.runSync('timer') }, delayMs)
   }
 
   private clearAuto(): void {
@@ -126,14 +135,22 @@ export default class AcornySyncPlugin extends Plugin {
     }
   }
 
-  private async runSync(manual = false): Promise<void> {
+  private async runSync(trigger: SyncTrigger): Promise<void> {
     if (this.disposed || !this.ready) return
+    const manual = isInteractiveTrigger(trigger)
+    // 首次写入必须由用户显式发起。默认目的地（列表第一个笔记本 + /Acorny）不该被自动采用。
+    if (!mayRunSync(trigger, this.destinationConfirmed)) {
+      if (trigger === 'settings') showMessage(this.i18n.confirmDestinationFirst, 15000)
+      return
+    }
     // 插件级单飞门：必须在设置 activeGateway 之前拦截并发触发（双击 / 启动同步与定时器重叠），
     // 否则第二次 runSync 会先把 activeGateway 改成新目的地，正在进行的第一次同步后续页面
     // 就会写到新目的地——重新引入「同步中途切换 notebook/folder」的问题。
     if (this.syncing) return
     if (!this.settings.exportToken) { showMessage(this.i18n.setTokenFirst); return }
     if (!this.settings.notebookId) { showMessage(this.i18n.selectNotebookFirst); return }
+    // 走到这里说明用户手动发起、且 token/笔记本都已就绪——目的地就此确认，之后自动同步放行。
+    if (trigger === 'manual') this.destinationConfirmed = true
     this.syncing = true
     this.setSyncingIndicator(true)
     // 手动触发给即时反馈（自动同步静默，只靠顶栏旋转，避免定时 toast 打扰）。
@@ -268,7 +285,7 @@ export default class AcornySyncPlugin extends Plugin {
         this.scheduleAuto(this.settings.pollIntervalMinutes > 0 ? this.settings.pollIntervalMinutes * 60_000 : null)
         // 只有目标位置变了才立刻同步，让新设置马上可见；改 token / 间隔不打扰。
         // 若此刻正有同步在跑，这次会被单飞门挡掉——migrationPending 已持久化，下一轮补做。
-        if (plan.destinationChanged) void this.runSync(true)
+        if (plan.destinationChanged) void this.runSync('settings')
       },
     })
 
@@ -300,16 +317,23 @@ export default class AcornySyncPlugin extends Plugin {
         el.className = 'b3-select fn__block'
         const fill = (nbs: Notebook[]) => {
           el.replaceChildren()
+          // 首项是空占位。没有它的话，<select> 会自动显示列表第一个笔记本，下面那句
+          // 「所见即所存」就会把它静默写进 draft——用户从没碰过下拉，目标笔记本却已被定死，
+          // 再叠加默认文件夹 /Acorny 与自动同步，等于用一套没人确认过的目的地往笔记里写。
+          const placeholder = document.createElement('option')
+          placeholder.value = ''
+          placeholder.textContent = this.i18n.selectNotebookPlaceholder
+          el.append(placeholder)
           for (const nb of nbs) {
             const opt = document.createElement('option')
             opt.value = nb.id
             opt.textContent = nb.name
             el.append(opt)
           }
-          // <select> 不改动就不触发 change，值不会写进 draft。填充后立即把「当前显示的值」
-          // 写回 draft：已选过则显示该项，否则默认第一个（所见即所存），避免"显示了却没提交"。
-          if (draft.notebookId) el.value = draft.notebookId
-          if (nbs.length > 0) draft.notebookId = el.value
+          // <select> 不改动就不触发 change，值不会写进 draft。填充后把「当前显示的值」写回
+          // draft，保证所见即所存：已选过且笔记本仍在 → 显示该项；否则回落到空占位（= 未选）。
+          el.value = draft.notebookId
+          draft.notebookId = el.value
         }
         fill(this.notebooks) // 先用已有缓存填（可能为空）
         // 每次打开设置都现拉一次并回填，覆盖"插件刚加载就打开设置、列表还没到"的异步竞态。
@@ -356,6 +380,7 @@ export default class AcornySyncPlugin extends Plugin {
     this.migrationPending = data.migrationPending ?? false
     // 高水位至少不低于已持久化的映射条目数（兼容此前没存该字段的 data.json）。
     this.knownSourceCount = Math.max(data.knownSourceCount ?? 0, Object.keys(this.sourceDocMap).length)
+    this.destinationConfirmed = data.destinationConfirmed ?? false
   }
 
   private async persist(): Promise<void> {
@@ -365,6 +390,7 @@ export default class AcornySyncPlugin extends Plugin {
       knownFolders: this.knownFolders,
       migrationPending: this.migrationPending,
       knownSourceCount: this.knownSourceCount,
+      destinationConfirmed: this.destinationConfirmed,
     }
     await this.saveData(STORAGE, payload)
   }

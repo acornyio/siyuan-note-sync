@@ -1,5 +1,36 @@
 import { describe, expect, it } from 'vitest'
-import { nextAutoDelayMs } from './scheduler'
+import { isInteractiveTrigger, mayRunSync, nextAutoDelayMs, type SyncTrigger } from './scheduler'
+
+describe('mayRunSync', () => {
+  const AUTO: SyncTrigger[] = ['startup', 'timer', 'settings']
+
+  it('blocks every automatic trigger until the user has confirmed the destination once', () => {
+    // 目标笔记本默认就是列表第一个、文件夹默认 /Acorny——用户还没确认过这套目的地，
+    // 却已经有三条路径会自动往笔记里写。首次写入必须由用户显式发起。
+    for (const t of AUTO) expect(mayRunSync(t, false)).toBe(false)
+  })
+
+  it('always allows a manual sync — that is how the destination gets confirmed', () => {
+    expect(mayRunSync('manual', false)).toBe(true)
+    expect(mayRunSync('manual', true)).toBe(true)
+  })
+
+  it('allows every trigger once the destination is confirmed', () => {
+    for (const t of AUTO) expect(mayRunSync(t, true)).toBe(true)
+  })
+})
+
+describe('isInteractiveTrigger', () => {
+  it('treats manual and settings-save as interactive (user is watching → give feedback)', () => {
+    expect(isInteractiveTrigger('manual')).toBe(true)
+    expect(isInteractiveTrigger('settings')).toBe(true)
+  })
+
+  it('treats startup and timer as silent (no toast storms in the background)', () => {
+    expect(isInteractiveTrigger('startup')).toBe(false)
+    expect(isInteractiveTrigger('timer')).toBe(false)
+  })
+})
 
 describe('nextAutoDelayMs', () => {
   it('auth_failed → null (pause auto)', () => {
