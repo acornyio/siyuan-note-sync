@@ -14,7 +14,7 @@ function makeDeps(pages: ExportFeedResponse[], over: Partial<SyncEngineDeps> = {
   const syncedHlIds = new Set<string>() // fake 的"思源里已有的高亮"，模拟网关的每文档去重
   const writes: { sourceId: string; ids: string[] }[] = []
   const deps: SyncEngineDeps = {
-    getSettings: () => ({ serverUrl: 'https://api.acorny.io', exportToken: 'tk', notebookId: 'nb', docFolderPath: '/Acorny', syncOnStartup: false, pollIntervalMinutes: 0 }),
+    getSettings: () => ({ exportToken: 'tk', notebookId: 'nb', docFolderPath: '/Acorny', syncOnStartup: false, pollIntervalMinutes: 0 }),
     loadSyncedIndex: async () => index,
     // 每页按分页游标返回；null → 第 0 页。全量对账每次都从 null 开始。
     fetchPage: async ({ cursor }) => pages[cursor ? Number(cursor) : 0],

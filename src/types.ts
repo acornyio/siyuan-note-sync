@@ -25,7 +25,6 @@ export interface ExportFeedResponse {
 
 /** 用户设置，经思源 saveData 持久化。 */
 export interface AcornySettings {
-  serverUrl: string
   exportToken: string
   notebookId: string
   docFolderPath: string
