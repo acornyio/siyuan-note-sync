@@ -24,6 +24,15 @@ Each Acorny source (article/book) maps to one SiYuan document; each highlight be
    - **Target notebook** (dropdown)
    - **Document folder** (hpath, default `/Acorny`)
    - **Sync on startup** / **Auto-sync interval (minutes)**
+4. Check the "Documents will be written to: <notebook> → <folder>" line below the settings, then press **"Save and sync now"**.
+
+> ⚠️ **The first sync must be started by you.** Until you have run one yourself, sync on startup,
+> interval sync and save-triggered sync **do not run at all** — the notebook and folder both have
+> defaults, and without this gate "paste a token and hit save" would already write into a
+> destination you never confirmed. Users upgrading from an older version also need to press it once.
+>
+> To go back to the un-initialised state, use the "Reset setup" button in Settings (uninstalling a
+> plugin in SiYuan does **not** delete its data, so "delete and reinstall" won't reset it).
 
 ## Settings
 
@@ -31,15 +40,27 @@ Each Acorny source (article/book) maps to one SiYuan document; each highlight be
 |---|---|---|
 | Server URL | `https://api.acorny.io` | Acorny API base |
 | Export token | — | `acornyexp_...` (stored locally, password field) |
-| Target notebook | — | **Where NEW source documents are created.** Already-synced sources keep their existing document wherever it lives; changing this does not migrate old documents. |
-| Document folder | `/Acorny` | hpath folder for new source documents |
-| Sync on startup | `true` | Sync once when the plugin loads |
-| Auto-sync interval | `60` | Minutes between automatic syncs; `0` disables |
+| Target notebook | — | The notebook highlights are written into. **Changing it migrates already-synced documents there** (see below). |
+| Document folder | `/Acorny` | hpath folder inside the notebook. **Changing it also migrates existing documents.** |
+| Sync on startup | `true` | Sync once when the plugin loads. **Only takes effect after initial setup** (see Installation). |
+| Auto-sync interval | `60` | Minutes between automatic syncs; `0` disables. Also only after initial setup. |
+
+### About migration
+
+When the target notebook or document folder changes, the next sync moves existing Acorny documents to the new location:
+
+- only documents carrying the Acorny anchor attribute are moved — **your own documents are never touched**;
+- moves use `moveDocsByID`, so **document ids stay the same** and highlights, block attributes and backlinks are preserved;
+- documents you deleted are not resurrected by a migration;
+- this is **continuous reconciliation**, not a one-shot action: whenever the setting and the actual location disagree, the next sync corrects it.
+
+If you want to move some documents elsewhere and have them stay there, that conflicts with how this plugin works — it will move them back on the next sync.
 
 ## v1 limitations
 
 - **Append-only for edits**: edits made on the Acorny side (note/quote) are not written back to already-synced highlight blocks. (Deletions in SiYuan, however, are rebuilt on the next sync — see Features.)
 - **Full-feed reconciliation**: each sync reads the entire feed rather than resuming from a cursor. This is what lets deletions self-heal, at the cost of re-reading the full feed every sync; for a personal highlight library that is cheap (dedup skips existing blocks).
+- **The first sync must be triggered manually**: a deliberate safety gate, see Installation.
 - **Single-instance serial idempotency**: de-duplication holds for a single running instance. Concurrent syncs from two windows/devices are not guaranteed collision-free (block attributes have no uniqueness constraint).
 - The plugin is disabled in publish mode (`disabledInPublish: true`) because it relies on `query/sql`.
 
