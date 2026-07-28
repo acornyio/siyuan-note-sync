@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.2.0
+
+### 设置
+
+- 移除「Server URL」设置项，API 地址固定为官方托管服务（https://api.acorny.io）。此前手动改过 Server URL 指向自建后端的用户，升级后将统一走官方服务，请按需停留在 v1.1.0。
+
+### 文档与资源
+
+- README 修正与 v1.1.0 行为不符的说明
+- 用真实 banner 替换 preview.png 占位图
+- 新增思源内核契约速查表（`docs/SIYUAN_KERNEL_CONTRACT.md`）
+
 ## v1.1.0
 
 修复一次严重的数据事故并重写去重与迁移模型。**升级后需手动同步一次**（见下）。
