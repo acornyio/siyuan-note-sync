@@ -73,6 +73,9 @@
 
 ## 开发
 
+> 🧭 **动同步 / 去重 / 迁移逻辑之前，先读 [`docs/SIYUAN_KERNEL_CONTRACT.md`](./docs/SIYUAN_KERNEL_CONTRACT.md)。**
+> 那里列的是真机实测出来的内核行为——好几条与直觉相反，本项目此前的事故都源于此。
+
 ```bash
 pnpm install
 pnpm dev            # watch 构建

@@ -73,6 +73,10 @@ If you want to move some documents elsewhere and have them stay there, that conf
 
 ## Development
 
+> 🧭 **Before touching the sync / dedup / migration logic, read [`docs/SIYUAN_KERNEL_CONTRACT.md`](./docs/SIYUAN_KERNEL_CONTRACT.md).**
+> It lists kernel behaviours verified against a real kernel — several are counter-intuitive, and
+> every incident this project has had traces back to one of them.
+
 ```bash
 pnpm install
 pnpm dev            # watch build

@@ -1,5 +1,9 @@
 # 思源 kernel 契约 spike 结论（Task 0）
 
+> ⚠️ **仅存档。** 这是 2026-07-23 首次 spike 的原始记录，后续实测推翻/补充了其中若干条
+> （尤其是 `getBlockAttrs` 的存在性语义、`attributes` 表的延迟量级）。
+> **以 [`../../SIYUAN_KERNEL_CONTRACT.md`](../../SIYUAN_KERNEL_CONTRACT.md) 为准。**
+
 **Date:** 2026-07-23
 **环境:** SiYuan/kernel **3.7.2**（`/api/system/version`），Windows。`minAppVersion` 保持 `3.7.0`（3.7.0–3.7.2 区间未逐一验证，但版本接近，风险低）。
 **方法:** 从外部对本机 kernel `http://127.0.0.1:6806` 发 HTTP（带 API token，仅 spike 用；插件运行时用 `fetchSyncPost` 会话鉴权，不需要 token）。草稿文档已清理。

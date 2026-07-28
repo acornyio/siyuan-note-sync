@@ -1,5 +1,10 @@
 # Acorny → 思源笔记 高亮同步插件 Implementation Plan
 
+> ⚠️ **历史文档，仅存档。** 这是 v0.1.0 实现前写的实施 plan，其中的去重模型、游标策略、
+> 设置项语义均已在 v1.1.0 被推翻或重写。**不要照它改代码。**
+> 当前设计见 [`../../features/SYNC_ENGINE_LOGIC.md`](../../features/SYNC_ENGINE_LOGIC.md)，
+> 内核契约见 [`../../SIYUAN_KERNEL_CONTRACT.md`](../../SIYUAN_KERNEL_CONTRACT.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在 `siyuan-note-sync` 前端插件里，从 Acorny 单向增量同步高亮进思源笔记：一个 source 对应一篇文档，高亮作为带块属性的列表块，幂等可重复运行且保护用户编辑。

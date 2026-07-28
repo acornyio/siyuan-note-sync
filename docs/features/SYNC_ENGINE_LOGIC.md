@@ -4,6 +4,9 @@
 **代码基线:** `main`（PR #2 已合并，v1.1.0）
 **目的:** 把「文档怎么建、内容怎么追加、怎么判重、怎么结束」逐条讲清楚，并列出实测确认的缺陷。
 
+> 📌 **只想知道「哪些内核 API 不能按直觉用」？直接看 [`../SIYUAN_KERNEL_CONTRACT.md`](../SIYUAN_KERNEL_CONTRACT.md)。**
+> 本文是完整的设计说明与事故复盘，篇幅较长。
+>
 > ✅ **§7 的 D-1 ~ D-4、D-7、D-8 已修复**（见 §10 修复记录）。§1–§6 描述的逻辑现已与代码一致；
 > §7 保留为事故档案，说明缺陷是什么、为何三轮修复没能命中它。
 
@@ -397,7 +400,8 @@ getBlockKramdown(新文档) → 空 → present 为空集
 | `src/folderMigration.ts` | 位置对账 `findDocsOutsideFolder`、迁移 `migrateDocsToFolder`、历史文件夹 `rememberFolders` |
 | `src/apiClient.ts` | Acorny Export API 客户端；`retryTransient` / `isTransientFeedError` 瞬时故障重试 |
 | `scripts/kernel-e2e-probe.mts` | 真实内核端到端探针（手动跑） |
-| `docs/superpowers/notes/2026-07-23-kernel-contract-fixtures.md` | kernel 契约实测记录（⚠️ 其中「删除→getBlockAttrs 返回空 {}」一条已被 D-7 推翻） |
+| `docs/SIYUAN_KERNEL_CONTRACT.md` | **内核契约速查 + 通用教训（改同步逻辑前先读）** |
+| `docs/superpowers/notes/2026-07-23-kernel-contract-fixtures.md` | 首次 spike 的原始记录（2026-07-23，仅存档；以速查表为准） |
 
 ---
 

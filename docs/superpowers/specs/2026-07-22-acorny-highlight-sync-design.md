@@ -1,5 +1,10 @@
 # Acorny → 思源笔记 高亮同步插件 — 设计规范
 
+> ⚠️ **历史文档，仅存档。** 这是 v0.1.0 实现前写的设计 spec，其中的去重模型、游标策略、
+> 设置项语义均已在 v1.1.0 被推翻或重写。**不要照它改代码。**
+> 当前设计见 [`../../features/SYNC_ENGINE_LOGIC.md`](../../features/SYNC_ENGINE_LOGIC.md)，
+> 内核契约见 [`../../SIYUAN_KERNEL_CONTRACT.md`](../../SIYUAN_KERNEL_CONTRACT.md)。
+
 **Date:** 2026-07-22
 **Status:** Approved (设计已确认，实现计划见 `docs/superpowers/plans/2026-07-22-acorny-highlight-sync.md`)
 **Scope:** `siyuan-note-sync` 前端插件，从 Acorny 单向同步高亮进思源笔记
