@@ -16,7 +16,6 @@ import {
 const STORAGE = 'acorny-sync.json'
 
 const DEFAULT_SETTINGS: AcornySettings = {
-  serverUrl: 'https://api.acorny.io',
   exportToken: '',
   notebookId: '',
   docFolderPath: '/Acorny',
@@ -316,7 +315,7 @@ export default class AcornySyncPlugin extends Plugin {
       },
     })
 
-    const textInput = (key: 'serverUrl' | 'docFolderPath') => () => {
+    const textInput = (key: 'docFolderPath') => () => {
       const el = document.createElement('input')
       el.className = 'b3-text-field fn__block'
       el.type = 'text'
@@ -325,11 +324,6 @@ export default class AcornySyncPlugin extends Plugin {
       return el
     }
 
-    this.setting.addItem({
-      title: this.i18n.settingServerUrl,
-      description: this.i18n.settingServerUrlDesc,
-      createActionElement: textInput('serverUrl'),
-    })
     this.setting.addItem({
       title: this.i18n.settingExportToken,
       description: this.i18n.settingExportTokenDesc,

@@ -74,6 +74,9 @@ export interface FetchFeedOptions {
   limit?: number
 }
 
+/** Acorny 只有一个官方托管 API，没有需要配置的自建服务地址。 */
+export const ACORNY_API_BASE_URL = 'https://api.acorny.io'
+
 export async function fetchFeedPage(http: HttpRequest, opts: FetchFeedOptions): Promise<ExportFeedResponse> {
   const base = opts.serverUrl.replace(/\/+$/, '')
   const limit = opts.limit ?? 100

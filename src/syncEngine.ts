@@ -1,7 +1,7 @@
 import type {
   AcornySettings, ExportFeedHighlight, ExportFeedResponse, ExportFeedSource, SyncedIndex, SyncStatus,
 } from './types'
-import { AuthError, RateLimitError } from './apiClient'
+import { AuthError, RateLimitError, ACORNY_API_BASE_URL } from './apiClient'
 import { SyncIndexError } from './siyuanGateway'
 
 export type SyncResult =
@@ -44,8 +44,10 @@ export class SyncEngine {
     this.running = true
     this.deps.onStatus('syncing')
     try {
-      // 同步开始时快照连接，保证本次 drain 每页都用同一 server/token，即使中途改设置。
-      const { serverUrl, exportToken: token } = this.deps.getSettings()
+      // 同步开始时快照连接，保证本次 drain 每页都用同一账号，即使中途改设置。
+      // server 是构建期常量——Acorny 没有需要配置的自建服务。
+      const { exportToken: token } = this.deps.getSettings()
+      const serverUrl = ACORNY_API_BASE_URL
       const aborted = this.deps.isAborted ?? (() => false)
 
       // 去重索引一律来自思源 SQL（块属性即真相），不依赖任何本地缓存。
